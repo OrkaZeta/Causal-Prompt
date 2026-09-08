@@ -1,0 +1,54 @@
+generator_ckpt: /projects/hi-paris/ZiyiData/Models/Causal-Forcing/framewise/causal_forcing.pt
+generator_ckpt_key: generator_ema
+base_model_path: /projects/hi-paris/ZiyiData/Models/Wan2.1-T2V-1.3B
+real_model_path: /projects/hi-paris/ZiyiData/Models/Wan2.1-T2V-14B
+real_name: Wan2.1-T2V-14B
+
+denoising_step_list: [1000, 750, 500, 250]
+warp_denoising_step: true
+ts_schedule: false
+num_train_timestep: 1000
+timestep_shift: 5.0
+guidance_scale: 3.0
+denoising_loss_type: flow
+mixed_precision: true
+seed: 42
+sharding_strategy: full
+
+lr: 2.0e-06
+lr_critic: 4.0e-07
+beta1: 0.0
+beta2: 0.999
+beta1_critic: 0.0
+beta2_critic: 0.999
+weight_decay: 0.01
+max_grad_norm_generator: 10.0
+max_grad_norm_critic: 10.0
+batch_size: 1
+num_workers: 4
+ema_weight: 0.99
+ema_start_step: 200
+max_steps: 5000
+checkpoint_steps: 200
+tensorboard_flush_steps: 10
+log_steps: 1
+dfake_gen_update_ratio: 5
+gc_interval: 100
+text_encoder_cpu_offload: true
+real_score_cpu_offload: false
+activation_cpu_offload_gib: 0
+
+image_or_video_shape: [1, 21, 16, 60, 104]
+num_training_frames: 21
+num_frame_per_block: 1
+context_noise: 0
+gradient_checkpointing: true
+model_kwargs:
+  timestep_shift: 5.0
+
+data_path: data/activitynet_causal_5s_train.jsonl
+prompt_schedule: causal
+fps: 16.0
+temporal_downsample: 4
+score_prompt_policy: full
+negative_prompt: "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
