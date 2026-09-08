@@ -205,7 +205,7 @@ def generate(args: argparse.Namespace) -> list[Path]:
     batches = iter(lambda: list(itertools.islice(dataset_iterator, args.batch_size)), [])
     for batch in tqdm(batches, desc=f"{args.model}/{args.prompt_schedule}"):
         for seed in seeds:
-            suffix = "" if seed == 0 else f"_seed{seed}"
+            suffix = f"_seed{seed}"
             pending = [(item, output_dir / f"{item.prompt_id}{suffix}.mp4") for item in batch]
             existing = [path for _, path in pending if path.is_file()]
             if bool(getattr(args, "skip_existing", True)) and len(existing) == len(pending):
