@@ -137,8 +137,12 @@ def _display(value: object, *, step: bool = False) -> str:
     if value is None:
         return "—"
     if step:
-        return f"step_{int(value):06d}"
+        return str(int(value))
     return str(value)
+
+
+def _display_data(value: object) -> object:
+    return "activitynet" if value == "activitynet_causal" else value
 
 
 def _sheet(title: object, fields: tuple[tuple[str, object], ...], css_class: str) -> str:
@@ -155,13 +159,13 @@ def _experiment_sheet(run: dict) -> str:
     return _sheet(run["model"], (
         ("mode", run["exp_mode"]),
         ("seed", run["exp_seed"]),
-        ("data", run["exp_data"]),
+        ("data", _display_data(run["exp_data"])),
         ("step", _display(run["exp_step"], step=True)),
     ), "experiment-sheet")
 
 
 def _generation_sheet(run: dict) -> str:
-    return _sheet(run["gen_data"], (
+    return _sheet(_display_data(run["gen_data"]), (
         ("mode", run["gen_mode"]),
         ("seed", run["gen_seed"]),
     ), "generation-sheet")
