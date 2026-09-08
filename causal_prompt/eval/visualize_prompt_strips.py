@@ -1,0 +1,246 @@
+"""Build frame strips and an annotated causal/current visual-evaluation page."""
+
+import argparse
+import html
+import json
+import subprocess
+from pathlib import Path
+
+from tqdm import tqdm
+
+from causal_prompt.prompt.schedule import schedule_record
+
+PROJECT_DIR = Path(__file__).resolve().parents[2]
+COLORS = ("e0", "e1", "e2", "e3", "e4")
+
+
+def discover_runs() -> list[dict]:
+    """Discover every ActNet baseline and CP-DMD model/mode/experiment/step run."""
+    runs = []
+    baseline_root = PROJECT_DIR / "outputs" / "zeroshot_baseline" / "activitynet_causal"
+    for video_root in sorted(baseline_root.glob("*/*/vid")):
+        if not any(video_root.glob("*.mp4")):
+            continue
+        model, prompt = video_root.parts[-3:-1]
+        runs.append({
+            "model": model, "prompt": prompt, "exp": "zeroshot_baseline", "step": None,
+            "video": video_root, "strips": video_root.parent / "strips", "suffix": "",
+        })
+
+    cp_root = PROJECT_DIR / "outputs" / "exp1_cp_dmd"
+    for video_root in sorted(cp_root.glob("*/*/video/step_*")):
+        if not any(video_root.glob("*.mp4")):
+            continue
+        try:
+            step = int(video_root.name.removeprefix("step_"))
+        except ValueError:
+            continue
+        exp, prompt = video_root.parts[-4:-2]
+        runs.append({
+            "model": "CP-DMD", "prompt": prompt, "exp": exp, "step": step,
+            "video": video_root,
+            "strips": video_root.parent.parent / "strips" / video_root.name,
+            "suffix": "_seed0",
+        })
+    return runs
+
+
+def make_strip(video: Path, output: Path, overwrite: bool = False) -> None:
+    """Extract ten evenly spaced frames from a five-second video into one JPG."""
+    if output.is_file() and not overwrite:
+        return
+    output.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y" if overwrite else "-n",
+        "-i", str(video), "-vf", "fps=2,scale=240:-2,tile=10x1", "-frames:v", "1",
+        str(output),
+    ]
+    subprocess.run(command, check=True)
+
+
+def make_strip_tree(video_root: Path, strip_root: Path,
+                    overwrite: bool = False) -> list[Path]:
+    """Convert every MP4 below video_root, preserving relative subdirectories."""
+    outputs = []
+    videos = sorted(video_root.rglob("*.mp4"))
+    for video in tqdm(videos, desc=f"Strips: {video_root.name}", unit="video"):
+        output = (strip_root / video.relative_to(video_root)).with_suffix(".jpg")
+        make_strip(video, output, overwrite)
+        outputs.append(output)
+    if not outputs:
+        raise FileNotFoundError(f"No MP4 files found under {video_root}")
+    return outputs
+
+
+def _gantt_axis() -> str:
+    return '<div class="axis">' + "".join(f"<i>{index}</i>" for index in range(21)) + "</div>"
+
+
+def _meta(model: str, prompt: str, exp: str, step: int | None = None) -> str:
+    step_name = "—" if step is None else f"step_{step:06d}"
+    return (f'<div class="meta"><span>{html.escape(model)}</span>'
+            f'<span>{html.escape(prompt)}</span><span>{html.escape(exp)}</span>'
+            f'<span>{html.escape(step_name)}</span></div>')
+
+
+def _active_runs(active: list[bool]) -> list[tuple[int, int]]:
+    runs, start = [], None
+    for index, value in enumerate((*active, False)):
+        if value and start is None:
+            start = index
+        elif not value and start is not None:
+            runs.append((start, index))
+            start = None
+    return runs
+
+
+def _visibility_gantt(record: dict, mode: str, model: str, step: str = "—") -> str:
+    item = schedule_record(record, mode=mode)
+    rows = []
+    for index, (event_id, description) in enumerate(zip(record["events_idx"], record["events_decs"])):
+        active = [description in prompt for prompt in item.chunk_prompts]
+        bars = "".join(
+            f'<i class="{COLORS[index % len(COLORS)]}" '
+            f'style="left:{start / 21 * 100:.4f}%;width:{(end - start) / 21 * 100:.4f}%">'
+            f'E{event_id} · {html.escape(description)}</i>'
+            for start, end in _active_runs(active)
+        )
+        rows.append(f'<div class="track">{bars}</div>')
+    return f'<div class="schedule">{_gantt_axis()}{"".join(rows)}</div>'
+
+
+def _event_gantt(record: dict) -> str:
+    events = []
+    for index, (event_id, times, description) in enumerate(zip(
+            record["events_idx"], record["events_timestamps"], record["events_decs"]
+    )):
+        left, width = times[0] / 5 * 100, (times[1] - times[0]) / 5 * 100
+        events.append(f'<div class="track"><i class="{COLORS[index % len(COLORS)]}" '
+                      f'style="left:{left:.2f}%;width:{width:.2f}%">'
+                      f'E{event_id} · {html.escape(description)}</i></div>')
+    return (f'<div class="result raw">{_meta("Ground truth", "events", "dataset")}'
+            f'<div class="visuals"><div class="schedule">{_gantt_axis()}'
+            f'{"".join(events)}</div></div></div>')
+
+
+def _select_runs(models: list[str] | None, prompts: list[str] | None,
+                 experiments: list[str] | None, steps: list[int] | None) -> list[dict]:
+    runs = [run for run in discover_runs()
+            if (not models or run["model"] in models)
+            and (not prompts or run["prompt"] in prompts)
+            and (not experiments or run["exp"] in experiments)
+            and (not steps or run["step"] in steps)]
+    if not runs:
+        raise ValueError("No discovered run matches the model/prompt/exp/step filters.")
+    return runs
+
+
+def build_report(dataset: Path, runs: list[dict], report: Path,
+                 max_samples: int | None = None, overwrite: bool = False,
+                 title: str = "ActNet Eval") -> Path:
+    records = {}
+    with dataset.open(encoding="utf-8") as handle:
+        for line in handle:
+            record = json.loads(line)
+            if record["split"] == "test":
+                records[record["sample_id"]] = record
+
+    for run in runs:
+        suffix = run["suffix"]
+        run["videos"] = {
+            path.stem.removesuffix(suffix): path for path in run["video"].glob("*.mp4")
+        }
+    runs = [run for run in runs if any(sample_id in records for sample_id in run["videos"])]
+    sample_ids = [sample_id for sample_id in records
+                  if any(sample_id in run["videos"] for run in runs)]
+    if max_samples is not None:
+        sample_ids = sample_ids[:max_samples]
+    if not sample_ids:
+        raise FileNotFoundError("No discovered videos match the test JSONL.")
+
+    cards = []
+    for sample_id in tqdm(sample_ids, desc="Report", unit="sample"):
+        record = records[sample_id]
+        results = []
+        for run in runs:
+            if sample_id not in run["videos"]:
+                continue
+            video = run["videos"][sample_id]
+            strip = run["strips"] / f"{sample_id}{run['suffix']}.jpg"
+            make_strip(video, strip, overwrite)
+            strip_relative = Path("..") / strip.relative_to(PROJECT_DIR)
+            video_relative = Path("..") / video.relative_to(PROJECT_DIR)
+            results.append(
+                f'<div class="result" data-model="{html.escape(run["model"], quote=True)}">'
+                f'{_meta(run["model"], run["prompt"], run["exp"], run["step"])}'
+                f'<div class="visuals"><button class="strip" data-video="{video_relative}">'
+                f'<img src="{strip_relative}" alt="{html.escape(sample_id)} strip"></button>'
+                f'{_visibility_gantt(record, run["prompt"], run["model"])}</div></div><hr>'
+            )
+        cards.append(f'''<section class="sample"><code>{html.escape(sample_id)}</code>
+<div class="initial"><b>Initial view</b><span>{html.escape(record["init_decs"])}</span></div>
+{_event_gantt(record)}<hr>
+{"".join(results)}
+</section>''')
+
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(f'''<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title>
+<link rel="stylesheet" href="assets/style.css"><style>
+:root{{--bg:#f3f6f9;--panel:#fff;--panel2:#f8fafc;--line:#cbd5df;--text:#17212b;--muted:#607080;--cyan:#087f8c;--orange:#f0a12b;--green:#42a66b;--red:#dc6074;--blue:#4f83d1;color-scheme:light}}body{{background:#f3f6f9;color:var(--text)}}.nav a:hover,.nav a.active{{background:#e7edf3;color:var(--text)}}
+.filters{{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:8px;margin:0 8px;padding:7px 9px;background:#f3f6f9ee;border-bottom:1px solid var(--line);font:12px sans-serif;backdrop-filter:blur(6px)}}.filters select{{min-width:180px;padding:4px 7px;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--text)}}.wrap{{max-width:none;padding:0 8px 8px}}.sample{{margin:4px 0;padding:4px;background:#fff;border:1px solid var(--line)}}.sample>code{{display:block;color:var(--muted);line-height:18px}}.initial{{display:grid;grid-template-columns:88px 1fr;gap:4px;padding:3px 5px;border-left:3px solid var(--cyan);background:#47d7d10b;font-size:12px}}hr{{margin:3px 0;border:0;border-top:1px solid #aebdca}}.result{{display:grid;grid-template-columns:84px minmax(0,1fr);gap:4px;margin:2px 0}}.visuals{{min-width:0}}.strip{{display:block;width:100%;padding:0;margin:0;border:0;background:none;cursor:pointer}}.strip img{{display:block;width:100%}}.meta{{display:flex;flex-direction:column;align-self:start;font:10px/1.25 monospace;color:var(--muted);overflow:hidden}}.meta span{{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.meta span:first-child{{color:var(--cyan);font-weight:700}}.schedule{{display:grid;grid-template-columns:minmax(0,1fr);gap:1px;margin:2px 0}}.axis{{display:grid;grid-template-columns:repeat(21,1fr);font:8px monospace;color:var(--muted);text-align:center}}.axis i{{font-style:normal;border-left:1px solid #17212b18}}.track{{position:relative;height:15px;background:repeating-linear-gradient(90deg,#17212b18 0,#17212b18 1px,transparent 1px,transparent 4.7619%)}}.track i{{position:absolute;height:100%;padding:1px 3px;font:8px/13px sans-serif;color:#07111f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:normal}}.e0{{background:var(--orange)}}.e1{{background:var(--red)}}.e2{{background:var(--blue)}}.e3{{background:var(--green)}}.e4{{background:var(--cyan)}}dialog{{width:min(1100px,96vw);padding:0;border:1px solid var(--line);background:#fff}}dialog::backdrop{{background:#000c}}dialog video{{display:block;width:100%;max-height:90vh}}dialog button{{position:absolute;right:4px;top:4px;z-index:2;border:0;background:#000b;color:white;font-size:20px;cursor:pointer}}
+</style></head><body><nav class="nav"></nav><div class="filters"><label for="model-filter">Model</label><select id="model-filter"><option value="">All models</option></select></div><main class="wrap">{''.join(cards)}</main><dialog id="player"><button aria-label="close">×</button><video controls autoplay></video></dialog><script src="assets/app.js"></script><script>const d=document.querySelector('#player'),v=d.querySelector('video');document.querySelectorAll('button.strip').forEach(x=>x.onclick=()=>{{v.src=x.dataset.video;d.showModal();}});function closePlayer(){{v.pause();v.removeAttribute('src');v.load();d.close();}}d.querySelector('button').onclick=closePlayer;d.onclick=e=>{{if(e.target===d)closePlayer();}};const mf=document.querySelector('#model-filter'),rows=[...document.querySelectorAll('.result[data-model]')];[...new Set(rows.map(x=>x.dataset.model))].sort().forEach(model=>mf.add(new Option(model,model)));mf.onchange=()=>rows.forEach(row=>{{const show=!mf.value||row.dataset.model===mf.value;row.hidden=!show;if(row.nextElementSibling?.tagName==='HR')row.nextElementSibling.hidden=!show;}});</script></body></html>''',
+                      encoding="utf-8")
+    return report
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build causal/current strips and visual report.")
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        help="Build one report from this dataset; omit to build both evaluation reports.",
+    )
+    parser.add_argument("--model", nargs="+")
+    parser.add_argument("--prompt", nargs="+", choices=("causal", "current"))
+    parser.add_argument("--exp", nargs="+")
+    parser.add_argument("--step", type=int, nargs="+")
+    parser.add_argument("--report", type=Path,
+                        help="Output for --dataset; omit to build both default reports.")
+    parser.add_argument("--max-samples", type=int, default=10,
+                        help="Number of dataset-ordered samples to show (default: 10).")
+    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--video-root", type=Path,
+                        help="Build a strip tree from this video directory instead of an HTML report.")
+    parser.add_argument("--strip-root", type=Path,
+                        help="Destination paired with --video-root; relative subdirectories are preserved.")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = _parse_args()
+    if args.video_root:
+        if args.strip_root is None:
+            raise ValueError("--strip-root is required with --video-root.")
+        outputs = make_strip_tree(args.video_root, args.strip_root, args.overwrite)
+        print(f"Created or retained {len(outputs)} strips under {args.strip_root}")
+        return
+    runs = _select_runs(args.model, args.prompt, args.exp, args.step)
+    if args.dataset is not None:
+        report = args.report or PROJECT_DIR / "reports" / "actnet-eval.html"
+        print(build_report(args.dataset, runs, report, args.max_samples, args.overwrite))
+        return
+    if args.report is not None:
+        raise ValueError("--report requires --dataset.")
+    defaults = (
+        (PROJECT_DIR / "data" / "activitynet_causal_5s_test.jsonl",
+         PROJECT_DIR / "reports" / "actnet-eval.html", "ActNet Eval"),
+        (PROJECT_DIR / "data" / "eval_single_obj_test.jsonl",
+         PROJECT_DIR / "reports" / "single-obj-eval.html", "Single Object Eval"),
+    )
+    for dataset, report, title in defaults:
+        print(build_report(dataset, runs, report, args.max_samples, args.overwrite, title))
+
+
+if __name__ == "__main__":
+    main()
