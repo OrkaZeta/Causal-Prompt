@@ -1,5 +1,13 @@
 > Information for reference only. No modification allowed.
 
+## Third-party source policy
+
+Everything under `third_party/` is reference-only. Do not modify, format, patch,
+or generate files inside any `third_party/` repository. Implement project-specific
+changes in `causal_prompt/` or another first-party module instead, keeping the
+third-party submodule pointers unchanged unless an explicit dependency update is
+requested.
+
 ## Local Development
 
 * `$HOME="/home/zliu"`

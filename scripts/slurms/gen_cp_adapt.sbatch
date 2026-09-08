@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generate videos from adapted causal-prompt checkpoints for any experiment.
-# EXP_ID required : adapted training run ID, for example actnet-s3cf4-seed42
+# EXP_ID required : actnet-s3cf4-seed42, singleobj-s3cf4-seed42
 # MODE required : [causal, current]
 # EXP_NAME optional : experiment directory name, default exp1_cp_dmd
 # DATA_ID optional : [single_obj, activitynet_causal], default activitynet_causal
@@ -15,10 +15,10 @@
 # OVERWRITE optional : [0, 1], default 0
 # DATASET_PATH optional : custom JSONL path; required for a custom DATA_ID
 # Examples:
-# sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=causal,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10 DATA_ID=activitynet_causal scripts/slurms/gen_cp_adapt.sbatch
-# sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=current,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10 DATA_ID=activitynet_causal scripts/slurms/gen_cp_adapt.sbatch
-# sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=causal,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10 DATA_ID=single_obj scripts/slurms/gen_cp_adapt.sbatch
-# sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=current,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10 DATA_ID=single_obj scripts/slurms/gen_cp_adapt.sbatch
+# sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=causal,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10,DATA_ID=activitynet_causal scripts/slurms/gen_cp_adapt.sbatch
+# sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=current,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10,DATA_ID=activitynet_causal scripts/slurms/gen_cp_adapt.sbatch
+# sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=causal,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10,DATA_ID=single_obj scripts/slurms/gen_cp_adapt.sbatch
+# sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=current,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10,DATA_ID=single_obj scripts/slurms/gen_cp_adapt.sbatch
 #SBATCH --partition=H100,A100,audible,L40S,A40,A30
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
