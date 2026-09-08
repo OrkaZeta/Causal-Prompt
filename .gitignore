@@ -1,0 +1,32 @@
+# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE and OS metadata
+.idea/
+.vscode/
+.DS_Store
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Generated experiment artifacts
+outputs/
+scripts/slurms/logs/*
+!scripts/slurms/logs/.gitkeep
+
+# Temporary and backup files
+*.bak
+*.tmp
+*.swp
+*~
