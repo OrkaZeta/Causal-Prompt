@@ -153,7 +153,6 @@ def _sheet(title: object, fields: tuple[tuple[str, object], ...], css_class: str
 
 def _experiment_sheet(run: dict) -> str:
     return _sheet(run["model"], (
-        ("id", run["exp_id"]),
         ("mode", run["exp_mode"]),
         ("seed", run["exp_seed"]),
         ("data", run["exp_data"]),
@@ -165,22 +164,25 @@ def _generation_sheet(run: dict) -> str:
     return _sheet(run["gen_data"], (
         ("mode", run["gen_mode"]),
         ("seed", run["gen_seed"]),
-        ("data", run["gen_data"]),
     ), "generation-sheet")
 
 
-def _configuration_key(run: dict) -> tuple[object, ...]:
-    """Identify runs whose only meaningful difference is generation seed."""
+def _experiment_key(run: dict) -> tuple[object, ...]:
+    """Identify one trained model/experiment configuration."""
     return tuple(run[key] for key in (
         "model", "exp_id", "exp_mode", "exp_seed", "exp_data", "exp_step",
-        "gen_mode", "gen_data",
     ))
 
 
-def _group_runs(runs: list[dict]) -> list[list[dict]]:
+def _generation_key(run: dict) -> tuple[object, ...]:
+    """Identify generations whose scheduling graph is shared across seeds."""
+    return run["gen_mode"], run["gen_data"]
+
+
+def _group_runs(runs: list[dict], key) -> list[list[dict]]:
     groups: dict[tuple[object, ...], list[dict]] = {}
     for run in runs:
-        groups.setdefault(_configuration_key(run), []).append(run)
+        groups.setdefault(key(run), []).append(run)
     return [sorted(group, key=lambda run: run["gen_seed"]) for group in groups.values()]
 
 
@@ -261,30 +263,37 @@ def build_report(dataset: Path, runs: list[dict], report: Path,
     for sample_id in tqdm(sample_ids, desc="Report", unit="sample"):
         record = records[sample_id]
         results = []
-        for group in _group_runs(runs):
-            variants = [run for run in group if sample_id in run["videos"]]
-            if not variants:
+        for experiment in _group_runs(runs, _experiment_key):
+            available = [run for run in experiment if sample_id in run["videos"]]
+            if not available:
                 continue
-            generation_rows = []
-            for run in variants:
-                video = run["videos"][sample_id]
-                strip = run["strips"] / f"{sample_id}{run['suffix']}.jpg"
-                make_strip(video, strip, overwrite)
-                strip_relative = Path("..") / strip.relative_to(PROJECT_DIR)
-                video_relative = Path("..") / video.relative_to(PROJECT_DIR)
-                generation_rows.append(
-                    f'<div class="generation">{_generation_sheet(run)}'
-                    f'<button class="strip" data-video="{video_relative}">'
-                    f'<img src="{strip_relative}" alt="{html.escape(sample_id)} '
-                    f'seed {run["gen_seed"]} strip"></button></div>'
+            generation_groups = []
+            for variants in _group_runs(available, _generation_key):
+                generation_rows = []
+                for run in variants:
+                    video = run["videos"][sample_id]
+                    strip = run["strips"] / f"{sample_id}{run['suffix']}.jpg"
+                    make_strip(video, strip, overwrite)
+                    strip_relative = Path("..") / strip.relative_to(PROJECT_DIR)
+                    video_relative = Path("..") / video.relative_to(PROJECT_DIR)
+                    generation_rows.append(
+                        f'<div class="generation">{_generation_sheet(run)}'
+                        f'<button class="strip" data-video="{video_relative}">'
+                        f'<img src="{strip_relative}" alt="{html.escape(sample_id)} '
+                        f'seed {run["gen_seed"]} strip"></button></div>'
+                    )
+                run = variants[0]
+                generation_groups.append(
+                    f'<div class="generation-config">{"".join(generation_rows)}'
+                    f'<div class="shared-gantt">'
+                    f'{_visibility_gantt(record, run["prompt"], run["model"])}'
+                    f'</div></div>'
                 )
-            run = variants[0]
+            run = available[0]
             results.append(
                 f'<div class="result" data-model="{html.escape(run["model"], quote=True)}">'
                 f'{_experiment_sheet(run)}<div class="run-content">'
-                f'{"".join(generation_rows)}<div class="shared-gantt">'
-                f'{_visibility_gantt(record, run["prompt"], run["model"])}'
-                f'</div></div></div><hr>'
+                f'{"".join(generation_groups)}</div></div><hr>'
             )
         cards.append(f'''<section class="sample"><code>{html.escape(sample_id)}</code>
 <div class="initial"><b>Initial view</b><span>{html.escape(record["init_decs"])}</span></div>
@@ -297,7 +306,7 @@ def build_report(dataset: Path, runs: list[dict], report: Path,
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title>
 <link rel="stylesheet" href="assets/style.css"><style>
 :root{{--bg:#f3f6f9;--panel:#fff;--panel2:#f8fafc;--line:#cbd5df;--text:#17212b;--muted:#607080;--cyan:#087f8c;--orange:#f0a12b;--green:#42a66b;--red:#dc6074;--blue:#4f83d1;color-scheme:light}}body{{background:#f3f6f9;color:var(--text)}}.nav a:hover,.nav a.active{{background:#e7edf3;color:var(--text)}}
-.filters{{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:8px;margin:0 8px;padding:7px 9px;background:#f3f6f9ee;border-bottom:1px solid var(--line);font:12px sans-serif;backdrop-filter:blur(6px)}}.filters select{{min-width:180px;padding:4px 7px;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--text)}}.wrap{{max-width:none;padding:0 8px 8px}}.sample{{margin:4px 0;padding:4px;background:#fff;border:1px solid var(--line)}}.sample>code{{display:block;color:var(--muted);line-height:18px}}.initial{{display:grid;grid-template-columns:88px 1fr;gap:4px;padding:3px 5px;border-left:3px solid var(--cyan);background:#47d7d10b;font-size:12px}}hr{{margin:3px 0;border:0;border-top:1px solid #aebdca}}.result{{display:grid;grid-template-columns:calc(84px + 5ch) minmax(0,1fr);gap:4px;margin:2px 0}}.run-content,.visuals{{min-width:0}}.generation{{display:grid;grid-template-columns:calc(72px + 5ch) minmax(0,1fr);gap:4px;margin-bottom:3px}}.meta-sheet{{width:100%;border-collapse:collapse;align-self:start;table-layout:fixed;background:#fff;font:10px/1.25 monospace;color:var(--text)}}.meta-sheet th,.meta-sheet td{{padding:1px 3px;border:1px solid var(--line);overflow-wrap:anywhere;text-align:left;vertical-align:top}}.meta-sheet thead th{{font-weight:700;text-align:center}}.meta-sheet tbody th{{width:34%;font-weight:400}}.strip{{display:block;width:100%;padding:0;margin:0;border:0;background:none;cursor:pointer}}.strip img{{display:block;width:100%}}.shared-gantt{{margin-left:calc(72px + 5ch + 4px)}}.raw .meta{{display:flex;flex-direction:column;align-self:start;font:10px/1.25 monospace;color:var(--muted);overflow:hidden}}.raw .meta span{{overflow-wrap:anywhere;white-space:normal}}.schedule{{display:grid;grid-template-columns:minmax(0,1fr);gap:1px;margin:2px 0}}.axis{{display:grid;grid-template-columns:repeat(21,1fr);font:8px monospace;color:var(--muted);text-align:center}}.axis i{{font-style:normal;border-left:1px solid #17212b18}}.track{{position:relative;height:15px;background:repeating-linear-gradient(90deg,#17212b18 0,#17212b18 1px,transparent 1px,transparent 4.7619%)}}.track i{{position:absolute;height:100%;padding:1px 3px;font:8px/13px sans-serif;color:#07111f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:normal}}.e0{{background:var(--orange)}}.e1{{background:var(--red)}}.e2{{background:var(--blue)}}.e3{{background:var(--green)}}.e4{{background:var(--cyan)}}dialog{{width:min(1100px,96vw);padding:0;border:1px solid var(--line);background:#fff}}dialog::backdrop{{background:#000c}}dialog video{{display:block;width:100%;max-height:90vh}}dialog button{{position:absolute;right:4px;top:4px;z-index:2;border:0;background:#000b;color:white;font-size:20px;cursor:pointer}}
+.filters{{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:8px;margin:0 8px;padding:7px 9px;background:#f3f6f9ee;border-bottom:1px solid var(--line);font:12px sans-serif;backdrop-filter:blur(6px)}}.filters select{{min-width:180px;padding:4px 7px;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--text)}}.wrap{{max-width:none;padding:0 8px 8px}}.sample{{margin:4px 0;padding:4px;background:#fff;border:1px solid var(--line)}}.sample>code{{display:block;color:var(--muted);line-height:18px}}.initial{{display:grid;grid-template-columns:88px 1fr;gap:4px;padding:3px 5px;border-left:3px solid var(--cyan);background:#47d7d10b;font-size:12px}}hr{{margin:3px 0;border:0;border-top:1px solid #aebdca}}.result{{display:grid;grid-template-columns:calc(84px + 5ch) minmax(0,1fr);gap:4px;margin:2px 0}}.run-content,.visuals{{min-width:0}}.generation-config+.generation-config{{margin-top:6px;padding-top:4px;border-top:1px solid var(--line)}}.generation{{display:grid;grid-template-columns:calc(72px + 5ch) minmax(0,1fr);gap:4px;margin-bottom:3px}}.meta-sheet{{width:100%;align-self:start;table-layout:fixed;background:#fff;font:10px/1.25 monospace;color:var(--text)}}.meta-sheet th,.meta-sheet td{{padding:1px 3px;border:0;overflow-wrap:anywhere;text-align:left;vertical-align:top}}.meta-sheet thead th{{font-weight:700;text-align:center}}.meta-sheet tbody th{{width:34%;font-weight:400}}.strip{{display:block;width:100%;padding:0;margin:0;border:0;background:none;cursor:pointer}}.strip img{{display:block;width:100%}}.shared-gantt{{margin-left:calc(72px + 5ch + 4px)}}.raw .meta{{display:flex;flex-direction:column;align-self:start;font:10px/1.25 monospace;color:var(--muted);overflow:hidden}}.raw .meta span{{overflow-wrap:anywhere;white-space:normal}}.schedule{{display:grid;grid-template-columns:minmax(0,1fr);gap:1px;margin:2px 0}}.axis{{display:grid;grid-template-columns:repeat(21,1fr);font:8px monospace;color:var(--muted);text-align:center}}.axis i{{font-style:normal;border-left:1px solid #17212b18}}.track{{position:relative;height:15px;background:repeating-linear-gradient(90deg,#17212b18 0,#17212b18 1px,transparent 1px,transparent 4.7619%)}}.track i{{position:absolute;height:100%;padding:1px 3px;font:8px/13px sans-serif;color:#07111f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:normal}}.e0{{background:var(--orange)}}.e1{{background:var(--red)}}.e2{{background:var(--blue)}}.e3{{background:var(--green)}}.e4{{background:var(--cyan)}}dialog{{width:min(1100px,96vw);padding:0;border:1px solid var(--line);background:#fff}}dialog::backdrop{{background:#000c}}dialog video{{display:block;width:100%;max-height:90vh}}dialog button{{position:absolute;right:4px;top:4px;z-index:2;border:0;background:#000b;color:white;font-size:20px;cursor:pointer}}
 </style></head><body><nav class="nav"></nav><div class="filters"><label for="model-filter">Model</label><select id="model-filter"><option value="">All models</option></select></div><main class="wrap">{''.join(cards)}</main><dialog id="player"><button aria-label="close">×</button><video controls autoplay></video></dialog><script src="assets/app.js"></script><script>const d=document.querySelector('#player'),v=d.querySelector('video');document.querySelectorAll('button.strip').forEach(x=>x.onclick=()=>{{v.src=x.dataset.video;d.showModal();}});function closePlayer(){{v.pause();v.removeAttribute('src');v.load();d.close();}}d.querySelector('button').onclick=closePlayer;d.onclick=e=>{{if(e.target===d)closePlayer();}};const mf=document.querySelector('#model-filter'),rows=[...document.querySelectorAll('.result[data-model]')];[...new Set(rows.map(x=>x.dataset.model))].sort().forEach(model=>mf.add(new Option(model,model)));mf.onchange=()=>rows.forEach(row=>{{const show=!mf.value||row.dataset.model===mf.value;row.hidden=!show;if(row.nextElementSibling?.tagName==='HR')row.nextElementSibling.hidden=!show;}});</script></body></html>''',
                       encoding="utf-8")
     return report
