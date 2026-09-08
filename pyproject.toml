@@ -1,0 +1,94 @@
+[project]
+name = "causal-prompt"
+version = "0.1.0"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "accelerate>=1.1.1",
+    "av==13.1.0",
+    "clip",
+    "dashscope",
+    "datasets>=3.0.0",
+    "diffusers==0.31.0",
+    "dominate",
+    "easydict",
+    "einops",
+    "flask",
+    "flask-socketio",
+    "ftfy",
+    "huggingface-hub>=1.24.0",
+    "imageio",
+    "imageio-ffmpeg",
+    "ipython>=8.39.0",
+    "ipywidgets>=8.1.8",
+    "jupyter>=1.1.1",
+    "lmdb",
+    "matplotlib",
+    "ninja",
+    "notebook>=7.6.1",
+    "numpy==1.24.4",
+    "omegaconf",
+    "onnx",
+    "onnxconverter-common",
+    "onnxruntime",
+    "onnxscript",
+    "open-clip-torch",
+    "opencv-python>=4.9.0.80",
+    "pandas>=2.3.3",
+    "pandas-stubs>=2.3.3.260113",
+    "peft",
+    "pillow>=10.0",
+    "pycocotools",
+    "pydantic==2.10.6",
+    "pyarrow>=17.0.0",
+    "pyyaml>=6.0",
+    "scikit-image",
+    "seaborn>=0.13.2",
+    "sentencepiece",
+    "starlette",
+    "tensorboard>=2.16",
+    "tokenizers>=0.20.3",
+    "torch==2.7.1",
+    "torchao",
+    "torchvision==0.22.1",
+    "tqdm",
+    "transformers>=4.49.0",
+    "wandb",
+]
+
+[project.scripts]
+causal-prompt-build-dataset = "causal_prompt.prompt.build_causal_prompt:main"
+causal-prompt-dmd = "causal_prompt.run_cp_dmd_adapt:main"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["causal_prompt*"]
+
+[tool.setuptools.package-data]
+"causal_prompt.models.causal_forcing" = ["configs/*.yaml"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.uv.sources]
+clip = { git = "https://github.com/openai/CLIP.git" }
+torch = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv]
+environments = [
+    "sys_platform == 'linux'",
+]
