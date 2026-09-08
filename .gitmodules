@@ -1,0 +1,3 @@
+[submodule "third_party/Causal-Forcing"]
+	path = third_party/Causal-Forcing
+	url = https://github.com/thu-ml/Causal-Forcing.git
