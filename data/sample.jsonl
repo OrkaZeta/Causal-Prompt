@@ -1,0 +1,25 @@
+{
+  "id": "0000_<cate_id>_<clip_name>",
+  "category": "<Cate Name : {Motion,Colour,State,Emerge,}>",
+  "global": {
+    "environment": "<environment/background description>",
+    "camera": "<camera viewpoint/motion description>",
+    "style": "<visual style description>",
+    "objects": "<main objects and their initial/global states>"
+  },
+  "duration_sec": 5.0,
+  "events": [
+    {
+      "event_id": 0,
+      "t_start": 0.0,
+      "t_end": 2.3,
+      "desc": "<only what happens during this interval>"
+    },
+    {
+      "event_id": 1,
+      "t_start": 2.3,
+      "t_end": 5.0,
+      "desc": "<next event>"
+    }
+  ]
+}
