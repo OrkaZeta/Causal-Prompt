@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Causal Prompt</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <style>
+    :root{color-scheme:light;--bg:#fff;--text:#17212b;--muted:#607080;--line:#d7dee5;--cyan:#087f8c}
+    body{background:#fff;color:var(--text)}
+    .wrap{max-width:none;padding:8px}
+    h1{font-size:20px;margin:4px 0}
+    h2{font-size:15px;margin:16px 0 4px}
+    p{margin:0;color:var(--muted);font-size:12px}
+    .table-wrap{border:1px solid var(--line);border-radius:0}
+    table{background:#fff;font-size:12px}
+    th,td{padding:7px 8px;border-color:var(--line);white-space:nowrap}
+    th{color:var(--cyan);background:#f5f8fa}
+    td:nth-child(3){white-space:normal}
+    code{color:#7a3e00;background:#fff4e5;padding:1px 3px}
+    .pv{display:grid;grid-template-columns:120px 1fr;gap:4px;margin:2px 0}.pv>code{align-self:start;background:none;color:var(--text)}
+    .pv-axis,.pv-track{display:grid;grid-template-columns:repeat(21,1fr)}.pv-axis{font:8px monospace;color:var(--muted);text-align:center}.pv-axis i{font-style:normal;border-left:1px solid var(--line)}
+    .pv-lanes{display:grid;gap:1px}.pv-track{height:11px;background:repeating-linear-gradient(90deg,#17212b12 0,#17212b12 1px,transparent 1px,transparent 4.7619%)}.pv-track i{height:11px;font:8px/11px sans-serif;padding-left:2px;overflow:hidden;font-style:normal}.g{background:#54c6c0}.e1{background:#f0a12b}.e2{background:#dc6074}.e3{background:#4f83d1;color:#fff}.pv-sep{border:0;border-top:1px solid var(--line);margin:3px 0}
+  </style>
+</head>
+<body>
+  <nav class="nav"></nav>
+  <main class="wrap">
+    <h1>Causal Prompt</h1>
+    <p>Design: Causal-Forcing weights for inference and evaluation.</p>
+
+    <h2>Prompt Schedule Modes</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Mode</th><th>ID</th><th>Visibility</th><th>Lat(F₀)</th><th>Lat({Fₑ₁})</th><th>Lat({Fₑₖ})</th><th>Lat({Fₑ₋₁})</th></tr></thead>
+        <tbody>
+          <tr><td>Full (default)</td><td><code>full</code></td><td>t₀ → tₜ</td><td>G + E₁:ₙ</td><td>G + E₁:ₙ</td><td>G + E₁:ₙ</td><td>G + E₁:ₙ</td></tr>
+          <tr><td>Full-Tagged</td><td><code>full_tagged</code></td><td>[past / current / future] t₀ → tₜ</td><td>G + [tag⁽⁰⁾₁:ₙ]E₁:ₙ</td><td>[tag⁽¹⁾₁:ₙ]E₁:ₙ</td><td>[tag⁽ᵏ⁾₁:ₙ]E₁:ₙ</td><td>[tag⁽ᴺ⁾₁:ₙ]E₁:ₙ</td></tr>
+          <tr><td>Causal Next</td><td><code>causal_next</code></td><td>t₀ → tₓ₊₁</td><td>G + E₁</td><td>E₁:₂</td><td>E₁:ₖ₊₁</td><td>E₁:ₙ</td></tr>
+          <tr><td>Causal</td><td><code>causal</code></td><td>t₀ → tₓ</td><td>G</td><td>E₁</td><td>E₁:ₖ</td><td>E₁:ₙ</td></tr>
+          <tr><td>Current Future</td><td><code>current_future</code></td><td>tₓ → tₜ</td><td>G + E₁:ₙ</td><td>E₁:ₙ</td><td>Eₖ:ₙ</td><td>Eₙ</td></tr>
+          <tr><td>Current Next</td><td><code>current_next</code></td><td>tₓ → tₓ₊₁</td><td>G + E₁</td><td>E₁:₂</td><td>Eₖ:ₖ₊₁</td><td>Eₙ</td></tr>
+          <tr><td>Current</td><td><code>current</code></td><td>tₓ</td><td>G</td><td>E₁</td><td>Eₖ</td><td>Eₙ</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Prompt Visibility Gantt</h2>
+    <div class="pv"><span></span><div class="pv-axis"><i>0</i><i>1</i><i>2</i><i>3</i><i>4</i><i>5</i><i>6</i><i>7</i><i>8</i><i>9</i><i>10</i><i>11</i><i>12</i><i>13</i><i>14</i><i>15</i><i>16</i><i>17</i><i>18</i><i>19</i><i>20</i></div></div>
+    <div id="prompt-gantt"></div>
+
+    <h2>Model Groups</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Group</th><th>Description</th><th>Models</th><th>Available IDs</th><th>Prompt</th></tr></thead>
+        <tbody>
+          <tr><td>B0</td><td>Bidirectional Teachers</td><td>Wan 2.1, Wan 2.2</td><td>B0-Wan21, B0-Wan22</td><td><code>full</code> only</td></tr>
+          <tr><td>T1</td><td>Diffusion AR Teachers</td><td>AR Diffusion</td><td>T1-FW, T1-CW</td><td>All modes</td></tr>
+          <tr><td>S2</td><td>Causal ODE/CD Students</td><td>Causal ODE, Causal CD</td><td>S2-FW/CW-ODE, S2-FW/CW-CD</td><td>All modes</td></tr>
+          <tr><td>S3</td><td>Causal Few-Step Students</td><td>CF (4-step), CFPP (2/1-step)</td><td>S3-FW/CW-CF4, S3-FW-CFPP2, S3-FW-CFPP1</td><td>All modes</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+  <script src="assets/app.js"></script>
+  <script>
+    const modes={
+      full:[[0,21],[0,21],[0,21],[0,21]],
+      full_tagged:[[0,1],[0,21],[0,21],[0,21]],
+      causal_next:[[0,1],[0,21],[1,21],[7,21]],
+      causal:[[0,1],[1,21],[7,21],[14,21]],
+      current_future:[[0,1],[0,7],[0,14],[0,21]],
+      current_next:[[0,1],[0,7],[1,14],[7,21]],
+      current:[[0,1],[1,7],[7,14],[14,21]]
+    };
+    const names=['G','E1','E2','E3'],classes=['g','e1','e2','e3'];
+    document.querySelector('#prompt-gantt').innerHTML=Object.entries(modes).map(([mode,ranges])=>`<div class="pv"><code>${mode}</code><div class="pv-lanes">${ranges.map(([start,end],i)=>`<div class="pv-track"><i class="${classes[i]}" style="grid-column:${start+1}/${end+1}">${names[i]}</i></div>`).join('')}</div></div><hr class="pv-sep">`).join('');
+  </script>
+</body>
+</html>
