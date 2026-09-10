@@ -1,4 +1,5 @@
 import argparse
+import fnmatch
 import itertools
 import logging
 import os
@@ -318,6 +319,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--split", choices=("train", "test", "all"), default="test")
     parser.add_argument("--max_samples", type=int)
+    parser.add_argument("--sample-id-glob", action="append", default=[])
 
     args = parser.parse_args()
     _validate_args(args)
@@ -501,8 +503,12 @@ def generate(args: argparse.Namespace) -> list[Path]:
         )
 
     if args.prompt_dataset is not None:
+        sample_id_globs = getattr(args, "sample_id_glob", [])
         prompt_items = itertools.islice(
-            ((item.prompt_id, item.prompt) for item in args.prompt_dataset),
+            ((item.prompt_id, item.prompt) for item in args.prompt_dataset
+             if not sample_id_globs
+             or any(fnmatch.fnmatchcase(item.prompt_id, pattern)
+                    for pattern in sample_id_globs)),
             args.max_samples,
         )
         prompt_count = None

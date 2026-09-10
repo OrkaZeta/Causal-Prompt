@@ -14,11 +14,15 @@
 # OUTPUT_ROOT optional : output root, default outputs
 # OVERWRITE optional : [0, 1], default 0
 # DATASET_PATH optional : custom JSONL path; required for a custom DATA_ID
+# SAMPLE_ID_GLOBS optional : space-separated sample-ID globs
+# SAMPLE_ID_REGEXES optional : space-separated full-match sample-ID regexes
 # Examples:
 # sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=causal,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10,DATA_ID=activitynet_causal scripts/slurms/gen_cp_adapt.sbatch
 # sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=current,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10,DATA_ID=activitynet_causal scripts/slurms/gen_cp_adapt.sbatch
 # sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=causal,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10,DATA_ID=single_obj scripts/slurms/gen_cp_adapt.sbatch
 # sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=current,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10,DATA_ID=single_obj scripts/slurms/gen_cp_adapt.sbatch
+# sbatch --export=ALL,EXP_ID=singleobjv2-s3cf4-seed42,MODE=causal,DATA_ID=single_obj_v2,DATASET_PATH=data/eval_single_obj_v2.jsonl,SPLIT=all,STEPS=2000,SAMPLE_ID_GLOBS="00*1_* 00*2_*" scripts/slurms/gen_cp_adapt.sbatch
+# sbatch --export=ALL,EXP_ID=singleobjv2-s3cf4-seed42,MODE=current,DATA_ID=single_obj_v2,DATASET_PATH=data/eval_single_obj_v2.jsonl,SPLIT=all,STEPS=2000,SAMPLE_ID_GLOBS="00*1_* 00*2_*" scripts/slurms/gen_cp_adapt.sbatch
 #SBATCH --partition=H100,A100,audible,L40S,A40,A30
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -105,6 +109,18 @@ args=(
   --seed "${SEED_VALUES[@]}"
 )
 if [[ -n "${MAX_SAMPLES:-}" ]]; then args+=(--max_samples "${MAX_SAMPLES}"); fi
+if [[ -n "${SAMPLE_ID_GLOBS:-}" ]]; then
+  read -r -a sample_id_globs <<< "${SAMPLE_ID_GLOBS}"
+  for pattern in "${sample_id_globs[@]}"; do
+    args+=(--sample-id-glob "${pattern}")
+  done
+fi
+if [[ -n "${SAMPLE_ID_REGEXES:-}" ]]; then
+  read -r -a sample_id_regexes <<< "${SAMPLE_ID_REGEXES}"
+  for pattern in "${sample_id_regexes[@]}"; do
+    args+=(--sample-id-regex "${pattern}")
+  done
+fi
 if [[ -n "${STEPS:-}" ]]; then
   step_spec="${STEPS//[,:]/ }"
   read -r -a STEP_VALUES <<< "${step_spec}"

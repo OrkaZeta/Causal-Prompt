@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import itertools
 import logging
 from pathlib import Path
@@ -82,22 +83,59 @@ def _load_generator_checkpoint(
                 f"Checkpoint {checkpoint_path} has no {state_key!r} state dict."
             )
         generator_state = state_dict[state_key]
-    try:
-        pipeline.generator.load_state_dict(generator_state)
-    except RuntimeError:
-        fixed_state = {
-            key.replace("model._fsdp_wrapped_module.", "model.", 1)
-            if key.startswith("model._fsdp_wrapped_module.")
-            else key: value
-            for key, value in generator_state.items()
-        }
-        incompatible = pipeline.generator.load_state_dict(fixed_state, strict=False)
-        if incompatible.missing_keys or incompatible.unexpected_keys:
-            logging.warning(
-                f"Loaded {checkpoint_path} with missing keys="
-                f"{incompatible.missing_keys} and unexpected keys="
-                f"{incompatible.unexpected_keys}"
+    # EMA named_parameters() may retain FSDP wrappers at multiple depths.
+    # Normalize before loading: even a failed strict load can copy matching
+    # tensors and leave the model partially updated.
+    if not isinstance(generator_state, dict):
+        raise TypeError(f"Checkpoint {checkpoint_path}: expected a state dictionary")
+    fixed_state = {}
+    original_names = {}
+    renamed = 0
+    for key, value in generator_state.items():
+        if not isinstance(key, str):
+            raise TypeError(f"Checkpoint {checkpoint_path}: non-string key {key!r}")
+        normalized = ".".join(
+            part for part in key.split(".") if part != "_fsdp_wrapped_module"
+        )
+        if normalized in fixed_state:
+            raise RuntimeError(
+                f"Checkpoint {checkpoint_path}: key collision after FSDP normalization: "
+                f"{original_names[normalized]!r} and {key!r} -> {normalized!r}"
             )
+        fixed_state[normalized] = value
+        original_names[normalized] = key
+        renamed += normalized != key
+
+    expected = pipeline.generator.state_dict()
+    missing = sorted(expected.keys() - fixed_state.keys())
+    unexpected = sorted(fixed_state.keys() - expected.keys())
+    invalid = []
+    for key in expected.keys() & fixed_state.keys():
+        value = fixed_state[key]
+        if not torch.is_tensor(value):
+            invalid.append(f"{key}: expected tensor, got {type(value).__name__}")
+        elif value.shape != expected[key].shape:
+            invalid.append(
+                f"{key}: checkpoint shape={tuple(value.shape)}, "
+                f"model shape={tuple(expected[key].shape)}"
+            )
+    if missing or unexpected or invalid:
+        raise RuntimeError(
+            f"Checkpoint {checkpoint_path} is incompatible; generator was not loaded. "
+            f"normalized_keys={renamed}; "
+            f"missing_keys ({len(missing)})={missing}; "
+            f"unexpected_keys ({len(unexpected)})={unexpected}; "
+            f"invalid_tensors ({len(invalid)})={sorted(invalid)}"
+        )
+    pipeline.generator.load_state_dict(fixed_state, strict=True)
+    logging.info(
+        "Loaded generator checkpoint %s (component=%s, tensors=%d, "
+        "normalized_keys=%d, missing_keys=0, unexpected_keys=0)",
+        checkpoint_path,
+        component if checkpoint_path.is_dir() else state_key,
+        len(fixed_state),
+        renamed,
+    )
 
 
 def _reset_seed(seed: int) -> torch.Generator:
@@ -201,11 +239,18 @@ def generate(args: argparse.Namespace) -> list[Path]:
         int(value) for value in config.image_or_video_shape
     )
     output_paths: list[Path] = []
-    dataset_iterator = itertools.islice(iter(dataset), args.max_samples)
+    sample_id_globs = getattr(args, "sample_id_glob", [])
+    dataset_iterator = (
+        item for item in dataset
+        if not sample_id_globs
+        or any(fnmatch.fnmatchcase(item.prompt_id, pattern)
+               for pattern in sample_id_globs)
+    )
+    dataset_iterator = itertools.islice(dataset_iterator, args.max_samples)
     batches = iter(lambda: list(itertools.islice(dataset_iterator, args.batch_size)), [])
     for batch in tqdm(batches, desc=f"{args.model}/{args.prompt_schedule}"):
         for seed in seeds:
-            suffix = "" if seed == 0 else f"_seed{seed}"
+            suffix = f"_seed{seed}"
             pending = [(item, output_dir / f"{item.prompt_id}{suffix}.mp4") for item in batch]
             existing = [path for _, path in pending if path.is_file()]
             if bool(getattr(args, "skip_existing", True)) and len(existing) == len(pending):
@@ -267,6 +312,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--batch_size", type=int, default=1,
                         help="Number of prompts generated together on the GPU.")
     parser.add_argument("--max_samples", type=int, default=None)
+    parser.add_argument("--sample-id-glob", action="append", default=[])
     parser.add_argument("--checkpoint_path", type=Path)
     parser.add_argument("--config_path", type=Path)
     parser.add_argument("--base_model_path", type=Path, default=DEFAULT_BASE_MODEL)

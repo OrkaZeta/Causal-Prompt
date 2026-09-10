@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Submit both matched arms separately:
-# sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,SCHEDULE=current scripts/slurms/exp1_cp_dmd_adapt.sbatch
 # sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,SCHEDULE=causal scripts/slurms/exp1_cp_dmd_adapt.sbatch
+# sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,SCHEDULE=current scripts/slurms/exp1_cp_dmd_adapt.sbatch
 # sbatch --export=ALL,EXP_ID=singleobj-s3cf4-seed42,SCHEDULE=causal,DATASET=data/eval_single_obj_train.jsonl,MAX_STEPS=2000 scripts/slurms/exp1_cp_dmd_adapt.sbatch
 # sbatch --export=ALL,EXP_ID=singleobj-s3cf4-seed42,SCHEDULE=current,DATASET=data/eval_single_obj_train.jsonl,MAX_STEPS=2000 scripts/slurms/exp1_cp_dmd_adapt.sbatch
+# sbatch --export=ALL,EXP_ID=singleobjv2-s3cf4-seed42,SCHEDULE=causal,DATASET=data/eval_single_obj_v2.jsonl,MAX_STEPS=2000 scripts/slurms/exp1_cp_dmd_adapt.sbatch
+# sbatch --export=ALL,EXP_ID=singleobjv2-s3cf4-seed42,SCHEDULE=current,DATASET=data/eval_single_obj_v2.jsonl,MAX_STEPS=2000 scripts/slurms/exp1_cp_dmd_adapt.sbatch
 # --nodelist=nodeaudible02,node53,nodesumo01
 # sbatch --partition=H100 --gpus=1 --export=ALL,EXP_ID=actnet-s3cf4-seed42,SCHEDULE=causal,NPROC_PER_NODE=1 scripts/slurms/exp1_cp_dmd_adapt.sbatch
 # sbatch --partition=L40S,A100 --gpus=3 --export=ALL,EXP_ID=actnet-s3cf4-seed42,SCHEDULE=current,DATASET=data/eval_single_obj_train.jsonl,MAX_STEPS=2000,NPROC_PER_NODE=3  scripts/slurms/exp1_cp_dmd_adapt.sbatch

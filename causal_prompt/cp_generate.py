@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import itertools
 import logging
 import re
@@ -62,6 +63,9 @@ def generate(args: argparse.Namespace) -> list[Path]:
     if args.max_samples is not None and args.max_samples <= 0:
         raise ValueError("--max_samples must be positive.")
     seeds = list(dict.fromkeys(int(seed) for seed in args.seeds))
+    sample_id_regexes = [
+        re.compile(pattern) for pattern in getattr(args, "sample_id_regex", [])
+    ]
     if not seeds or any(seed < 0 for seed in seeds):
         raise ValueError("--seed values must be non-negative integers.")
 
@@ -114,7 +118,18 @@ def generate(args: argparse.Namespace) -> list[Path]:
             chunk_size=int(config.num_frame_per_block),
             split=None if args.split == "all" else args.split,
         )
-        dataset_iterator = itertools.islice(iter(dataset), args.max_samples)
+        dataset_iterator = (
+            item for item in dataset
+            if (
+                not getattr(args, "sample_id_glob", []) and not sample_id_regexes
+            ) or any(
+                fnmatch.fnmatchcase(item.prompt_id, pattern)
+                for pattern in getattr(args, "sample_id_glob", [])
+            ) or any(
+                pattern.fullmatch(item.prompt_id) for pattern in sample_id_regexes
+            )
+        )
+        dataset_iterator = itertools.islice(dataset_iterator, args.max_samples)
         batches = iter(
             lambda: list(itertools.islice(dataset_iterator, args.batch_size)), []
         )
@@ -208,6 +223,14 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--max_samples", type=int)
+    parser.add_argument(
+        "--sample-id-glob", action="append", default=[],
+        help="Generate only sample IDs matching this glob; repeat to combine patterns.",
+    )
+    parser.add_argument(
+        "--sample-id-regex", action="append", default=[],
+        help="Generate only sample IDs fully matching this regex; repeat to combine patterns.",
+    )
     parser.add_argument("--seed", type=int, nargs="+", default=[0], dest="seeds")
     parser.add_argument(
         "--config_path",

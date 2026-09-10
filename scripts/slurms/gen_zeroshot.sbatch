@@ -10,6 +10,7 @@
 # BATCH_SIZE optional : positive int, default 1
 # OVERWRITE optional : [0, 1], default 0
 # DATASET_PATH optional : custom JSONL path; required for a custom DATA_ID
+# SAMPLE_ID_GLOBS optional : space-separated sample-ID globs
 # Examples:
 # sbatch --export=ALL,MODEL=B0-wan21,SCHEDULE=full,DATA_ID=single_obj,SEEDS=0:1 scripts/slurms/gen_zeroshot.sbatch
 # sbatch --export=ALL,MODEL=S3-FW-CF4STEP,SCHEDULE=causal,DATA_ID=activitynet_causal,SEEDS=0 scripts/slurms/gen_zeroshot.sbatch
@@ -120,6 +121,13 @@ common_limit=()
 if [[ -n "${MAX_SAMPLES:-}" ]]; then
   common_limit=(--max_samples "${MAX_SAMPLES}")
 fi
+common_filter=()
+if [[ -n "${SAMPLE_ID_GLOBS:-}" ]]; then
+  read -r -a sample_id_globs <<< "${SAMPLE_ID_GLOBS}"
+  for pattern in "${sample_id_globs[@]}"; do
+    common_filter+=(--sample-id-glob "${pattern}")
+  done
+fi
 
 case "${MODEL}" in
   B0-wan21|B0-wan22)
@@ -149,6 +157,7 @@ case "${MODEL}" in
       --offload_model "${OFFLOAD_MODEL:-true}"
       --skip_existing
       "${common_limit[@]}"
+      "${common_filter[@]}"
       "${wan_extra[@]}"
     )
     if [[ "${T5_CPU:-1}" == 1 ]]; then args+=(--t5_cpu); fi
@@ -171,6 +180,7 @@ case "${MODEL}" in
       --batch_size "${BATCH_SIZE}"
       --seed "${SEED_VALUES[@]}"
       "${common_limit[@]}"
+      "${common_filter[@]}"
     )
     if [[ -n "${CHECKPOINT_PATH:-}" ]]; then args+=(--checkpoint_path "${CHECKPOINT_PATH}"); fi
     if [[ -n "${CONFIG_PATH:-}" ]]; then args+=(--config_path "${CONFIG_PATH}"); fi
