@@ -3,7 +3,7 @@
 # EXP_ID required : actnet-s3cf4-seed42, singleobj-s3cf4-seed42
 # MODE required : [causal, current]
 # EXP_NAME optional : experiment directory name, default exp1_cp_dmd
-# DATA_ID optional : [single_obj, activitynet_causal], default activitynet_causal
+# DATA_ID optional : [single_obj, single_obj_v2, activitynet_causal], default activitynet_causal
 # SPLIT optional : [train, test], default test
 # SEEDS optional : non-negative int list separated by comma/colon/space, default 0
 # STEPS optional : checkpoint-step int list separated by comma/colon/space, default latest
@@ -23,6 +23,7 @@
 # sbatch --export=ALL,EXP_ID=actnet-s3cf4-seed42,MODE=current,SEEDS=0,STEPS="1000 2000 3000",MAX_SAMPLES=10,DATA_ID=single_obj scripts/slurms/gen_cp_adapt.sbatch
 # sbatch --export=ALL,EXP_ID=singleobjv2-s3cf4-seed42,MODE=causal,DATA_ID=single_obj_v2,DATASET_PATH=data/eval_single_obj_v2.jsonl,SPLIT=all,STEPS=2000,SAMPLE_ID_GLOBS="00*1_* 00*2_*" scripts/slurms/gen_cp_adapt.sbatch
 # sbatch --export=ALL,EXP_ID=singleobjv2-s3cf4-seed42,MODE=current,DATA_ID=single_obj_v2,DATASET_PATH=data/eval_single_obj_v2.jsonl,SPLIT=all,STEPS=2000,SAMPLE_ID_GLOBS="00*1_* 00*2_*" scripts/slurms/gen_cp_adapt.sbatch
+# sbatch --export=ALL,EXP_ID=singleobjv2-colour-s3cf4-seed42,MODE=current,DATA_ID=single_obj_v2_colour,DATASET_PATH=data/eval_single_obj_v2_colour.jsonl,SPLIT=all,STEPS="1000 2000" scripts/slurms/gen_cp_adapt.sbatch
 #SBATCH --partition=H100,A100,audible,L40S,A40,A30
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

@@ -18,6 +18,8 @@ SEEDED_STEM = re.compile(r"^(?P<sample_id>.+)_seed(?P<seed>\d+)$")
 
 
 def _dataset_id(path: Path) -> str:
+    if "single_obj_v2_colour" in path.stem:
+        return "single_obj_v2_colour"
     if "single_obj_v2" in path.stem:
         return "single_obj_v2"
     if "single_obj" in path.stem:
@@ -28,7 +30,9 @@ def _dataset_id(path: Path) -> str:
 
 
 def _experiment_metadata(exp_id: str) -> tuple[str, int | None]:
-    if exp_id.startswith("singleobjv2-"):
+    if exp_id.startswith("singleobjv2-colour-"):
+        exp_data = "single_obj_v2_colour"
+    elif exp_id.startswith("singleobjv2-"):
         exp_data = "single_obj_v2"
     elif exp_id.startswith("singleobj-"):
         exp_data = "single_obj"
@@ -73,6 +77,7 @@ def discover_runs() -> list[dict]:
                 "gen_data": gen_data,
                 "videos": videos,
                 "strips": video_root.parent / "strips",
+                "strips21": video_root.parent / "strips21",
                 "suffix": f"_seed{gen_seed}",
             })
 
@@ -102,19 +107,28 @@ def discover_runs() -> list[dict]:
                 "gen_data": exp_data,
                 "videos": videos,
                 "strips": video_root.parent.parent / "strips" / video_root.name,
+                "strips21": video_root.parent.parent / "strips21" / video_root.name,
                 "suffix": f"_seed{gen_seed}",
             })
     return runs
 
 
-def make_strip(video: Path, output: Path, overwrite: bool = False) -> None:
-    """Extract ten evenly spaced frames from a five-second video into one JPG."""
+def make_strip(video: Path, output: Path, overwrite: bool = False,
+               frame_count: int = 10) -> None:
+    """Extract a 10-frame overview or 21 latent-aligned frames (81 frames, 16 fps)."""
+    if frame_count not in (10, 21):
+        raise ValueError("frame_count must be 10 or 21")
     if output.is_file() and not overwrite:
         return
     output.parent.mkdir(parents=True, exist_ok=True)
+    frame_filter = (
+        "fps=2,scale=240:-2,tile=10x1"
+        if frame_count == 10
+        else r"select=not(mod(n\,4))*lte(n\,80),scale=240:-2,tile=21x1"
+    )
     command = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y" if overwrite else "-n",
-        "-i", str(video), "-vf", "fps=2,scale=240:-2,tile=10x1", "-frames:v", "1",
+        "-i", str(video), "-vf", frame_filter, "-frames:v", "1",
         str(output),
     ]
     subprocess.run(command, check=True)
@@ -122,13 +136,16 @@ def make_strip(video: Path, output: Path, overwrite: bool = False) -> None:
 
 def make_strip_tree(video_root: Path, strip_root: Path,
                     overwrite: bool = False) -> list[Path]:
-    """Convert every MP4 below video_root, preserving relative subdirectories."""
+    """Build both strip trees, preserving relative subdirectories in each."""
+    strip21_root = strip_root.with_name(strip_root.name + "21")
     outputs = []
     videos = sorted(video_root.rglob("*.mp4"))
     for video in tqdm(videos, desc=f"Strips: {video_root.name}", unit="video"):
         output = (strip_root / video.relative_to(video_root)).with_suffix(".jpg")
         make_strip(video, output, overwrite)
-        outputs.append(output)
+        output21 = (strip21_root / video.relative_to(video_root)).with_suffix(".jpg")
+        make_strip(video, output21, overwrite, frame_count=21)
+        outputs.extend((output, output21))
     if not outputs:
         raise FileNotFoundError(f"No MP4 files found under {video_root}")
     return outputs
@@ -295,6 +312,8 @@ def build_report(dataset: Path, runs: list[dict], report: Path,
                     video = run["videos"][sample_id]
                     strip = run["strips"] / f"{sample_id}{run['suffix']}.jpg"
                     make_strip(video, strip, overwrite)
+                    strip21 = run["strips21"] / f"{sample_id}{run['suffix']}.jpg"
+                    make_strip(video, strip21, overwrite, frame_count=21)
                     strip_relative = Path("..") / strip.relative_to(PROJECT_DIR)
                     video_relative = Path("..") / video.relative_to(PROJECT_DIR)
                     experiment_sheet = _experiment_sheet(run) if show_experiment else ""
@@ -340,25 +359,26 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dataset",
         type=Path,
-        help="Build one report from this dataset; omit to build both evaluation reports.",
+        help="Build one report from this dataset; omit to build all default evaluation reports.",
     )
     parser.add_argument("--model", nargs="+")
     parser.add_argument("--prompt", nargs="+", choices=("causal", "current"))
     parser.add_argument("--exp", nargs="+")
     parser.add_argument("--step", type=int, nargs="+")
     parser.add_argument("--report", type=Path,
-                        help="Output for --dataset; omit to build both default reports.")
+                        help="Output for --dataset; omit to build all default reports.")
     parser.add_argument("--title", help="HTML page title for a custom report.")
-    parser.add_argument("--max-samples", type=int, default=10,
-                        help="Number of dataset-ordered samples to show (default: 10).")
-    parser.add_argument("--split", choices=("train", "test", "all"), default="test")
+    parser.add_argument("--max-samples", type=int, default=None,
+                        help="Optional report sample limit; by default include all samples.")
+    parser.add_argument("--split", choices=("train", "test", "all"),
+                        help="Override split; defaults to test for v1/ActivityNet and train for v2.")
     parser.add_argument("--sample-id-glob", action="append", default=[])
     parser.add_argument("--sample-id-regex", action="append", default=[])
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--video-root", type=Path,
                         help="Build a strip tree from this video directory instead of an HTML report.")
     parser.add_argument("--strip-root", type=Path,
-                        help="Destination paired with --video-root; relative subdirectories are preserved.")
+                        help="10-frame destination; a sibling named <strip-root>21 also receives 21-frame strips.")
     return parser.parse_args()
 
 
@@ -368,13 +388,38 @@ def main() -> None:
         if args.strip_root is None:
             raise ValueError("--strip-root is required with --video-root.")
         outputs = make_strip_tree(args.video_root, args.strip_root, args.overwrite)
-        print(f"Created or retained {len(outputs)} strips under {args.strip_root}")
+        print(f"Created or retained {len(outputs)} strips under {args.strip_root} "
+              f"and {args.strip_root.with_name(args.strip_root.name + '21')}")
         return
+    # The no-argument command always covers every local video, independently
+    # of report datasets, splits, sample limits, and run-discovery metadata.
+    full_run = not any((
+        args.dataset, args.report, args.model, args.prompt, args.exp, args.step,
+        args.split, args.sample_id_glob, args.sample_id_regex,
+    ))
+    if full_run:
+        video_roots = []
+        for root in (
+            PROJECT_DIR / "outputs" / "zeroshot_baseline",
+            PROJECT_DIR / "outputs" / "exp1_cp_dmd",
+        ):
+            video_roots.extend(
+                path for path in root.rglob("*")
+                if path.is_dir() and path.name in {"vid", "video"}
+                and any(path.rglob("*.mp4"))
+            )
+        for video_root in sorted(video_roots):
+            strip_root = video_root.parent / "strips"
+            outputs = make_strip_tree(video_root, strip_root, args.overwrite)
+            print(f"Created or retained {len(outputs)} strips under "
+                  f"{strip_root} and {strip_root.with_name('strips21')}")
+
     runs = _select_runs(args.model, args.prompt, args.exp, args.step)
     if args.dataset is not None:
         report = args.report or PROJECT_DIR / "reports" / "actnet-eval.html"
         print(build_report(args.dataset, runs, report, args.max_samples, args.overwrite,
-                           title=args.title or "ActNet Eval", split=args.split,
+                           title=args.title or "ActNet Eval",
+                           split=args.split or ("train" if _dataset_id(args.dataset) == "single_obj_v2" else "test"),
                            sample_id_globs=args.sample_id_glob,
                            sample_id_regexes=args.sample_id_regex))
         return
@@ -382,12 +427,15 @@ def main() -> None:
         raise ValueError("--report requires --dataset.")
     defaults = (
         (PROJECT_DIR / "data" / "activitynet_causal_5s_test.jsonl",
-         PROJECT_DIR / "reports" / "actnet-eval.html", "ActNet Eval"),
+         PROJECT_DIR / "reports" / "actnet-eval.html", "ActNet Eval", "test"),
         (PROJECT_DIR / "data" / "eval_single_obj_test.jsonl",
-         PROJECT_DIR / "reports" / "single-obj-eval.html", "Single Object Eval"),
+         PROJECT_DIR / "reports" / "single-obj-eval.html", "Single Object Eval", "test"),
+        (PROJECT_DIR / "data" / "eval_single_obj_v2.jsonl",
+         PROJECT_DIR / "reports" / "single-obj-v2-eval.html", "Single Object V2 Eval", "train"),
     )
-    for dataset, report, title in defaults:
-        print(build_report(dataset, runs, report, args.max_samples, args.overwrite, title))
+    for dataset, report, title, default_split in defaults:
+        print(build_report(dataset, runs, report, args.max_samples, args.overwrite,
+                           title, split=args.split or ("all" if full_run else default_split)))
 
 
 if __name__ == "__main__":
