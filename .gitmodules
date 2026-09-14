@@ -7,3 +7,15 @@
 [submodule "third_party/Wan2.1"]
 	path = third_party/Wan2.1
 	url = https://github.com/Wan-Video/Wan2.1
+[submodule "third_party/LongLive"]
+	path = third_party/LongLive
+	url = https://github.com/NVlabs/LongLive
+[submodule "third_party/AlayaWorld"]
+	path = third_party/AlayaWorld
+	url = https://github.com/AlayaLab/AlayaWorld
+[submodule "third_party/ViGeo"]
+	path = third_party/ViGeo
+	url = https://github.com/aigc3d/ViGeo
+[submodule "third_party/Incantation"]
+	path = third_party/Incantation
+	url = https://github.com/zhushangwen/Incantation

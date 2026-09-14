@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # One zero-shot model/schedule/data job; every selected data ID and seed is generated.
-# MODEL : [B0-wan21, B0-wan22, T1-FW, S3-FW-CF4STEP, S3-FW-CFPP2STEP, WM-LongLive, WM-AlayaWorld]
-# WM models support current/causal; AlayaWorld requires WM_IMAGE_DIR.
-# WM jobs use .venv-wm prepared by prepare_wm.sbatch. No remote strip/HTML execution.
+# MODEL : [B0-wan21, B0-wan22, T1-FW, S3-FW-CF4STEP, S3-FW-CFPP2STEP, WM-LongLive, WM-AlayaWorld, WM-Incantation]
+# WM models support current/causal; I2V WMs create missing initial images in WM_IMAGE_DIR.
+# All models use the project .venv managed by uv.
 # SCHEDULE : [full, full_tagged, causal_next, causal, current_future, current_next, current]
 #            B0-wan21 and B0-wan22 support full only.
 # DATA_ID : [single_obj, activitynet_causal]
@@ -16,6 +16,8 @@
 # Examples:
 # sbatch --export=ALL,MODEL=B0-wan21,SCHEDULE=full,DATA_ID=single_obj,SEEDS=0:1 scripts/slurms/gen_zeroshot.sbatch
 # sbatch --export=ALL,MODEL=S3-FW-CF4STEP,SCHEDULE=causal,DATA_ID=activitynet_causal,SEEDS=0 scripts/slurms/gen_zeroshot.sbatch
+# LongLive sbatch --partition=H100,A100 --export=ALL,MODEL=WM-LongLive,SCHEDULE=current,DATA_ID=single_obj_v2_colour,SPLIT=train,SEEDS=0 scripts/slurms/gen_zeroshot.sbatch
+# AlayaWorld : sbatch --partition=H100 --mem=96G --export=ALL,MODEL=WM-AlayaWorld,SCHEDULE=current,DATA_ID=single_obj_v2_colour,SPLIT=train,SEEDS=0 scripts/slurms/gen_zeroshot.sbatch
 #SBATCH --partition=H100,A100,audible,L40S,A40,A30
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -32,12 +34,9 @@
 set -euo pipefail
 
 cd "${SLURM_SUBMIT_DIR}"
-if [[ "${MODEL:-}" == WM-* ]]; then
-  export VENV_DIR="${VENV_DIR:-.venv-wm}"
-fi
 source scripts/slurms/env.sh
 
-: "${MODEL:?Set MODEL to B0-wan21, B0-wan22, T1-FW, S3-FW-CF4STEP, or S3-FW-CFPP2STEP}"
+: "${MODEL:?Set MODEL to B0-wan21, B0-wan22, T1-FW, S3-FW-CF4STEP, S3-FW-CFPP2STEP, WM-LongLive, WM-AlayaWorld, or WM-Incantation}"
 : "${SCHEDULE:?Set SCHEDULE to a supported prompt schedule}"
 
 case "${SCHEDULE}" in
@@ -181,7 +180,7 @@ case "${MODEL}" in
     fi
     srun --unbuffered "${PYTHON}" -m causal_prompt.wan_generate "${args[@]}"
     ;;
-  WM-LongLive|WM-AlayaWorld)
+  WM-LongLive|WM-AlayaWorld|WM-Incantation)
     case "${SCHEDULE}" in current|causal) ;; *) echo "WM models require current/causal" >&2; exit 2 ;; esac
     if [[ "${BATCH_SIZE}" != 1 ]]; then echo "WM models require BATCH_SIZE=1" >&2; exit 2; fi
     args=(--model "${MODEL}" --dataset "${DATASET_PATH}" --prompt_schedule "${SCHEDULE}"
@@ -189,7 +188,7 @@ case "${MODEL}" in
       "${common_limit[@]}" "${common_filter[@]}")
     if [[ -n "${CHECKPOINT_PATH:-}" ]]; then args+=(--checkpoint_path "${CHECKPOINT_PATH}"); fi
     if [[ -n "${BASE_MODEL_PATH:-}" ]]; then args+=(--base_model_path "${BASE_MODEL_PATH}"); fi
-    if [[ "${MODEL}" == WM-AlayaWorld ]]; then
+    if [[ "${MODEL}" == WM-AlayaWorld || "${MODEL}" == WM-Incantation ]]; then
       args+=(--image-dir "${WM_IMAGE_DIR:-outputs/zeroshot_inputs/${DATA_ID}/initial_images}")
       export ALAYA_USE_FA3=0
     fi

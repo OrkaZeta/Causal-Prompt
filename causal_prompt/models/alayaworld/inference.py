@@ -30,7 +30,8 @@ class AlayaWorldPipeline:
         cfg.paths.dmd_resume = str(checkpoint)
         cfg.paths.history_encoder = str(checkpoint / "history_encoder.pt")
         cfg.spatial_memory.vigeo_checkpoint = str(models_root / "ViGeo1.1")
-        cfg.spatial_memory.vigeo_repo_path = str(models_root / "ViGeo-code")
+        repo_vigeo = Path(__file__).resolve().parents[3] / "third_party" / "ViGeo"
+        cfg.spatial_memory.vigeo_repo_path = str(repo_vigeo)
         cfg.runtime.gradient_checkpointing = False
         cfg.runtime.fsdp = False
         cfg.runtime.vae_decode_chunk_latents = 8

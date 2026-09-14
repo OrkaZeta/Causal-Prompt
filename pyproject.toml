@@ -8,14 +8,16 @@ dependencies = [
     "clip",
     "dashscope",
     "datasets>=3.0.0",
+    "decord==0.6.0",
     "diffusers==0.31.0",
     "dominate",
     "easydict",
     "einops",
     "flask",
     "flask-socketio",
+    "flash-attn==2.8.3.post1",
     "ftfy",
-    "huggingface-hub>=1.24.0",
+    "huggingface-hub==0.36.2",
     "imageio",
     "imageio-ffmpeg",
     "ipython>=8.39.0",
@@ -50,8 +52,9 @@ dependencies = [
     "torch==2.7.1",
     "torchao",
     "torchvision==0.22.1",
+    "timm==1.0.22",
     "tqdm",
-    "transformers>=4.49.0",
+    "transformers==4.57.6",
     "wandb",
 ]
 
@@ -95,3 +98,4 @@ explicit = true
 environments = [
     "sys_platform == 'linux'",
 ]
+no-build-isolation-package = ["flash-attn"]

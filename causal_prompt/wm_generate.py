@@ -51,7 +51,7 @@ def save_video(frames, fps, target):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--model", choices=["WM-LongLive", "WM-AlayaWorld"], required=True)
+    p.add_argument("--model", choices=["WM-LongLive", "WM-AlayaWorld", "WM-Incantation"], required=True)
     p.add_argument("--dataset", type=Path, required=True)
     p.add_argument("--prompt_schedule", choices=["current", "causal"], required=True)
     p.add_argument("--save_dir", type=Path, required=True)
@@ -77,9 +77,14 @@ def main():
         from causal_prompt.models.longlive.inference import LongLivePipeline
         checkpoint = args.checkpoint_path or args.models_root / "LongLive-2.0-5B"
         pipe = LongLivePipeline(checkpoint, args.base_model_path or args.models_root / "Wan2.2-TI2V-5B")
-    else:
+    elif args.model == "WM-AlayaWorld":
         if args.image_dir is None:
             raise ValueError("WM-AlayaWorld requires --image-dir with <sample_id>_seed<seed>.png")
+        from causal_prompt.prepare_wm_images import generate_initial_images
+        image_records = list({record["sample_id"]: record for record, _, _ in jobs}.values())
+        image_seeds = sorted({seed for _, seed, _ in jobs})
+        generate_initial_images(image_records, image_seeds, args.image_dir,
+                                args.base_model_path or args.models_root / "Wan2.2-TI2V-5B")
         for record, seed, _ in jobs:
             image = args.image_dir / f"{record['sample_id']}_seed{seed}.png"
             if not image.is_file():
@@ -87,6 +92,17 @@ def main():
         from causal_prompt.models.alayaworld.inference import AlayaWorldPipeline
         checkpoint = args.checkpoint_path or args.models_root / "AlayaWorld-v1.1-stage3"
         pipe = AlayaWorldPipeline(checkpoint, args.models_root)
+    else:
+        if args.image_dir is None:
+            raise ValueError("WM-Incantation requires --image-dir with <sample_id>_seed<seed>.png")
+        from causal_prompt.prepare_wm_images import generate_initial_images
+        image_records = list({record["sample_id"]: record for record, _, _ in jobs}.values())
+        image_seeds = sorted({seed for _, seed, _ in jobs})
+        base_model = args.base_model_path or args.models_root / "Wan2.2-TI2V-5B"
+        generate_initial_images(image_records, image_seeds, args.image_dir, base_model)
+        from causal_prompt.models.incantation.inference import IncantationPipeline
+        checkpoint = args.checkpoint_path or args.models_root / "Incantation" / "incantation-margit-step8000.safetensors"
+        pipe = IncantationPipeline(checkpoint, base_model)
     for record, seed, out in jobs:
         scheduled = schedule_record(record, args.prompt_schedule, fps=pipe.fps,
                                     temporal_downsample=pipe.temporal_stride, chunk_size=pipe.chunk_size)
