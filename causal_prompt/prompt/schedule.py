@@ -366,7 +366,8 @@ class CausalPromptTrainingDataset(Dataset[dict[str, Any]]):
 
     def __init__(self, path: str | Path, mode: str, *, split: str = "train",
                  fps: float = 16.0, temporal_downsample: int = 4,
-                 chunk_size: int = 1, expected_latent_frames: int | None = 21) -> None:
+                 chunk_size: int = 1, expected_latent_frames: int | None = 21,
+                 sample_id: str | None = None) -> None:
         self.path, self.mode, self.split = Path(path), mode, split
         self.fps, self.temporal_downsample = fps, temporal_downsample
         self.chunk_size, self.expected_latent_frames = chunk_size, expected_latent_frames
@@ -378,13 +379,17 @@ class CausalPromptTrainingDataset(Dataset[dict[str, Any]]):
                 if not line.strip():
                     continue
                 record = json.loads(line)
-                if record.get("split") == split:
+                if record.get("split") == split and (
+                    sample_id is None or record.get("sample_id") == sample_id
+                ):
                     missing = CAUSAL_PROMPT_FIELDS - record.keys()
                     if missing:
                         raise ValueError(f"Missing fields at {self.path}:{line_number}: {sorted(missing)}")
                     self._records.append(record)
         if not self._records:
-            raise ValueError(f"No split={split!r} records found in {self.path}")
+            raise ValueError(
+                f"No split={split!r} records for sample_id={sample_id!r} in {self.path}"
+            )
 
     def __len__(self) -> int:
         return len(self._records)

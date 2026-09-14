@@ -23,6 +23,7 @@ def _parse_args():
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--max-steps", type=int)
+    parser.add_argument("--sample-id", help="Restrict training to one sample ID.")
     return parser.parse_args()
 
 
@@ -49,6 +50,8 @@ def main():
 
 
     config.data_path = str(args.data_path.resolve())
+    if args.sample_id is not None:
+        config.sample_id = args.sample_id
     config.prompt_schedule = args.schedule
     config.generator_ckpt = str(args.checkpoint.resolve())
     if args.max_steps is not None:

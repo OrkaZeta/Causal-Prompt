@@ -22,6 +22,7 @@ from causal_prompt.prompt.schedule import (
 )
 
 from .model import CausalPromptDMD
+from .data_sampling import cycle_batches
 from .utils.distributed import EMA_FSDP, fsdp_state_dict, fsdp_wrap, launch_distributed_job
 from .checkpoint import (
     latest_checkpoint,
@@ -31,11 +32,6 @@ from .checkpoint import (
     write_manifest,
 )
 from .utils.misc import set_seed
-
-
-def _cycle(loader):
-    while True:
-        yield from loader
 
 
 def _release_cpu_memory() -> None:
@@ -192,6 +188,7 @@ class Exp1Trainer:
             temporal_downsample=int(config.temporal_downsample),
             chunk_size=1,
             expected_latent_frames=21,
+            sample_id=getattr(config, "sample_id", None),
         )
         self._status(f"Training Dataset loaded: {len(dataset)} samples.")
         sampler = DistributedSampler(dataset, shuffle=True, drop_last=True)
@@ -203,7 +200,7 @@ class Exp1Trainer:
             collate_fn=collate_causal_prompt_batch,
         )
         self.loader = loader
-        self.batches = _cycle(loader)
+        self.batches = cycle_batches(loader)
         self.writer = SummaryWriter(str(run_dir / "tensorboard")) if self.is_main else None
         self.ema = None
         self.max_generator_norm = float(config.max_grad_norm_generator)
@@ -286,11 +283,8 @@ class Exp1Trainer:
                 self.model.generator, decay=float(self.config.ema_weight)
             )
             self.ema.load_state_dict(state["ema"])
-        # Restore the deterministic dataset cursor. The sampler ordering is
-        # fixed, so only the position within one loader pass is required.
-        skip_batches = self.batches_consumed % len(self.loader)
-        for _ in range(skip_batches):
-            next(self.batches)
+        # Recover both the sampler epoch and the offset within that epoch.
+        self.batches = cycle_batches(self.loader, self.batches_consumed)
         if state.get("python_rng_state") is not None:
             random.setstate(state["python_rng_state"])
         if state.get("numpy_rng_state") is not None:
@@ -341,9 +335,7 @@ class Exp1Trainer:
         rng = load_component(checkpoint_dir, "rng_state")
         self.step = int(manifest["step"])
         self.batches_consumed = int(manifest.get("batches_consumed", 0))
-        skip_batches = self.batches_consumed % len(self.loader)
-        for _ in range(skip_batches):
-            next(self.batches)
+        self.batches = cycle_batches(self.loader, self.batches_consumed)
         if rng.get("python_rng_state") is not None:
             random.setstate(rng["python_rng_state"])
         if rng.get("numpy_rng_state") is not None:
@@ -357,7 +349,7 @@ class Exp1Trainer:
         print(f"Training state restored at step {self.step}.", flush=True)
 
     def _generator_step(self, batch):
-        self._status(f"Step {self.step + 1}: Generator update started.")
+        self._status(f"Step {self.step + 1}: Generator update started. samples={batch['prompt_ids']}")
         if self.single_gpu_teacher_staging:
             self._status("Moving Real Score Model to GPU...")
             self.model.real_score.to(
@@ -401,7 +393,7 @@ class Exp1Trainer:
         }
 
     def _critic_step(self, batch):
-        self._status(f"Step {self.step + 1}: Critic update started.")
+        self._status(f"Step {self.step + 1}: Critic update started. samples={batch['prompt_ids']}")
         full, blocks, _ = self._conditions(batch)
         self.critic_optimizer.zero_grad(set_to_none=True)
         loss, metrics = self.model.critic_loss(self._shape(batch), full, blocks)
@@ -457,7 +449,8 @@ class Exp1Trainer:
             names.append("rng_state")
             write_manifest(
                 checkpoint_dir,
-                {"step": self.step, "batches_consumed": self.batches_consumed},
+                {"step": self.step, "batches_consumed": self.batches_consumed,
+                 "sampling_policy": "epoch_shuffle"},
                 names,
             )
             self._status(f"Checkpoint saved: {checkpoint_dir}")

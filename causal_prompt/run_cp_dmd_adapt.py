@@ -38,6 +38,7 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=PROJECT_ROOT / "data" / "activitynet_causal_5s_train.jsonl",
     )
+    parser.add_argument("--sample-id", help="Train on exactly this sample from --dataset.")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--exp-name", default="exp1_cp_dmd")
     parser.add_argument("--exp-id", required=True)
@@ -64,6 +65,7 @@ def _preflight(args: argparse.Namespace) -> dict[str, int]:
         temporal_downsample=4,
         chunk_size=1,
         expected_latent_frames=21,
+        sample_id=args.sample_id,
     )
     stats: Counter[str] = Counter(samples=len(dataset))
     for index in range(len(dataset)):
@@ -131,6 +133,8 @@ def main() -> None:
         "--run-dir",
         str(output_dir),
     ]
+    if args.sample_id is not None:
+        command.extend(("--sample-id", args.sample_id))
     if args.max_steps is not None:
         command.extend(("--max-steps", str(args.max_steps)))
     print(
