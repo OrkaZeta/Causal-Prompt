@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # One zero-shot model/schedule/data job; every selected data ID and seed is generated.
-# MODEL : [B0-wan21, B0-wan22, T1-FW, S3-FW-CF4STEP, S3-FW-CFPP2STEP]
+# MODEL : [B0-wan21, B0-wan22, T1-FW, S3-FW-CF4STEP, S3-FW-CFPP2STEP, WM-LongLive, WM-AlayaWorld]
+# WM models support current/causal; AlayaWorld requires WM_IMAGE_DIR.
+# WM jobs use .venv-wm prepared by prepare_wm.sbatch. No remote strip/HTML execution.
 # SCHEDULE : [full, full_tagged, causal_next, causal, current_future, current_next, current]
 #            B0-wan21 and B0-wan22 support full only.
 # DATA_ID : [single_obj, activitynet_causal]
@@ -30,6 +32,9 @@
 set -euo pipefail
 
 cd "${SLURM_SUBMIT_DIR}"
+if [[ "${MODEL:-}" == WM-* ]]; then
+  export VENV_DIR="${VENV_DIR:-.venv-wm}"
+fi
 source scripts/slurms/env.sh
 
 : "${MODEL:?Set MODEL to B0-wan21, B0-wan22, T1-FW, S3-FW-CF4STEP, or S3-FW-CFPP2STEP}"
@@ -42,7 +47,10 @@ esac
 
 DATA_ID="${DATA_ID:-single_obj}"
 DATASET_PATH="${DATASET_PATH:-}"
-SPLIT="${SPLIT:-test}"
+case "${DATA_ID}" in
+  single_obj_v2|single_obj_v2_colour) SPLIT="${SPLIT:-train}" ;;
+  *) SPLIT="${SPLIT:-test}" ;;
+esac
 case "${SPLIT}" in
   train|test) ;;
   all)
@@ -55,6 +63,8 @@ case "${SPLIT}" in
 esac
 case "${DATA_ID}" in
   single_obj) DATASET_PATH="${DATASET_PATH:-data/eval_single_obj_${SPLIT}.jsonl}" ;;
+  single_obj_v2) DATASET_PATH="${DATASET_PATH:-data/eval_single_obj_v2.jsonl}" ;;
+  single_obj_v2_colour) DATASET_PATH="${DATASET_PATH:-data/eval_single_obj_v2_colour.jsonl}" ;;
   activitynet_causal) DATASET_PATH="${DATASET_PATH:-data/activitynet_causal_5s_${SPLIT}.jsonl}" ;;
   *)
     if [[ -z "${DATASET_PATH}" ]]; then
@@ -108,7 +118,8 @@ env_file="${run_dir}/env_${SLURM_JOB_ID}.txt"
   echo "video_dir=${VIDEO_DIR}"
   echo
   echo "===== environment ====="
-  env | sort
+  # Only record reproducibility settings; never serialize credentials.
+  printf "SLURM_JOB_ID=%s\nCUDA_VISIBLE_DEVICES=%s\n" "${SLURM_JOB_ID:-}" "${CUDA_VISIBLE_DEVICES:-}"
   echo
   echo "===== modules ====="
   module list 2>&1 || true
@@ -169,6 +180,21 @@ case "${MODEL}" in
       args=("${filtered[@]}")
     fi
     srun --unbuffered "${PYTHON}" -m causal_prompt.wan_generate "${args[@]}"
+    ;;
+  WM-LongLive|WM-AlayaWorld)
+    case "${SCHEDULE}" in current|causal) ;; *) echo "WM models require current/causal" >&2; exit 2 ;; esac
+    if [[ "${BATCH_SIZE}" != 1 ]]; then echo "WM models require BATCH_SIZE=1" >&2; exit 2; fi
+    args=(--model "${MODEL}" --dataset "${DATASET_PATH}" --prompt_schedule "${SCHEDULE}"
+      --save_dir "${VIDEO_DIR}" --split "${SPLIT}" --seed "${SEED_VALUES[@]}"
+      "${common_limit[@]}" "${common_filter[@]}")
+    if [[ -n "${CHECKPOINT_PATH:-}" ]]; then args+=(--checkpoint_path "${CHECKPOINT_PATH}"); fi
+    if [[ -n "${BASE_MODEL_PATH:-}" ]]; then args+=(--base_model_path "${BASE_MODEL_PATH}"); fi
+    if [[ "${MODEL}" == WM-AlayaWorld ]]; then
+      args+=(--image-dir "${WM_IMAGE_DIR:-outputs/zeroshot_inputs/${DATA_ID}/initial_images}")
+      export ALAYA_USE_FA3=0
+    fi
+    if [[ "${OVERWRITE}" == 1 ]]; then args+=(--overwrite); fi
+    srun --unbuffered "${PYTHON}" -m causal_prompt.wm_generate "${args[@]}"
     ;;
   T1-FW|S3-FW-CF4STEP|S3-FW-CFPP2STEP)
     args=(

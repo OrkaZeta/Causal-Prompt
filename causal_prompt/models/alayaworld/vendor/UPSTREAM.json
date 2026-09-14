@@ -1,0 +1,10 @@
+{
+  "repository": "AlayaWorld",
+  "commit": "ea03cfbb2e4c4e9102ed8ea8562e0b5370ca9b79",
+  "source": "third_party/AlayaWorld",
+  "note": "Vendored runtime; upstream reference is read-only.",
+  "local_changes": [
+    "alaya/model/loader.py",
+    "alaya/memory/builder.py"
+  ]
+}

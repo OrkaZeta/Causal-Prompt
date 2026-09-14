@@ -47,6 +47,8 @@ def _experiment_metadata(exp_id: str) -> tuple[str, int | None]:
 def _videos_by_seed(video_root: Path) -> dict[int, dict[str, Path]]:
     videos: dict[int, dict[str, Path]] = {}
     for path in sorted(video_root.glob("*.mp4")):
+        if path.stem.endswith((".native", ".partial")):
+            continue
         match = SEEDED_STEM.fullmatch(path.stem)
         # Treat legacy unsuffixed files as seed 0 until they are migrated.
         seed = int(match.group("seed")) if match else 0
@@ -115,7 +117,11 @@ def discover_runs() -> list[dict]:
 
 def make_strip(video: Path, output: Path, overwrite: bool = False,
                frame_count: int = 10) -> None:
-    """Extract a 10-frame overview or 21 latent-aligned frames (81 frames, 16 fps)."""
+    """Extract 10 overview frames or 21 frames at 0.25-second intervals.
+
+    For 16-fps Wan this remains frames 0,4,...,80. WM outputs are normalized
+    to 16 fps too; native-model latent/chunk timing is shown separately.
+    """
     if frame_count not in (10, 21):
         raise ValueError("frame_count must be 10 or 21")
     if output.is_file() and not overwrite:
@@ -139,7 +145,7 @@ def make_strip_tree(video_root: Path, strip_root: Path,
     """Build both strip trees, preserving relative subdirectories in each."""
     strip21_root = strip_root.with_name(strip_root.name + "21")
     outputs = []
-    videos = sorted(video_root.rglob("*.mp4"))
+    videos = sorted(p for p in video_root.rglob("*.mp4") if not p.stem.endswith((".native", ".partial")))
     for video in tqdm(videos, desc=f"Strips: {video_root.name}", unit="video"):
         output = (strip_root / video.relative_to(video_root)).with_suffix(".jpg")
         make_strip(video, output, overwrite)
@@ -294,7 +300,7 @@ def build_report(dataset: Path, runs: list[dict], report: Path,
     if max_samples is not None:
         sample_ids = sample_ids[:max_samples]
     if not sample_ids:
-        raise FileNotFoundError("No discovered videos match the test JSONL.")
+        raise FileNotFoundError("No discovered videos match the selected JSONL.")
 
     cards = []
     for sample_id in tqdm(sample_ids, desc="Report", unit="sample"):
@@ -316,6 +322,16 @@ def build_report(dataset: Path, runs: list[dict], report: Path,
                     make_strip(video, strip21, overwrite, frame_count=21)
                     strip_relative = Path("..") / strip.relative_to(PROJECT_DIR)
                     video_relative = Path("..") / video.relative_to(PROJECT_DIR)
+                    details = ""
+                    metadata_path = video.with_suffix(".json")
+                    if run["model"].startswith("WM-") and metadata_path.is_file():
+                        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                        rows = "".join(f"{i}: {text}\n" for i, text in enumerate(metadata.get("chunk_prompts", [])))
+                        info = (f"{metadata.get('input_mode')} | native {metadata.get('native_fps')} fps | "
+                                f"chunk {metadata.get('chunk_seconds')} s | "
+                                f"starts {metadata.get('chunk_start_seconds')}")
+                        details = f'<details><summary>{html.escape(info)}</summary><pre>{html.escape(rows)}</pre></details>'
+                    strip21_relative = Path("..") / strip21.relative_to(PROJECT_DIR)
                     experiment_sheet = _experiment_sheet(run) if show_experiment else ""
                     show_experiment = False
                     generation_rows.append(
@@ -324,6 +340,7 @@ def build_report(dataset: Path, runs: list[dict], report: Path,
                         f'<button class="strip" data-video="{video_relative}">'
                         f'<img src="{strip_relative}" alt="{html.escape(sample_id)} '
                         f'seed {run["gen_seed"]} strip"></button></div>'
+                        f'<a href="{strip21_relative}" target="_blank">21 frames · 0–5 s</a>{details}'
                     )
                 run = variants[0]
                 generation_groups.append(
@@ -419,7 +436,7 @@ def main() -> None:
         report = args.report or PROJECT_DIR / "reports" / "actnet-eval.html"
         print(build_report(args.dataset, runs, report, args.max_samples, args.overwrite,
                            title=args.title or "ActNet Eval",
-                           split=args.split or ("train" if _dataset_id(args.dataset) == "single_obj_v2" else "test"),
+                           split=args.split or ("train" if _dataset_id(args.dataset) in {"single_obj_v2", "single_obj_v2_colour"} else "test"),
                            sample_id_globs=args.sample_id_glob,
                            sample_id_regexes=args.sample_id_regex))
         return
@@ -433,7 +450,13 @@ def main() -> None:
         (PROJECT_DIR / "data" / "eval_single_obj_v2.jsonl",
          PROJECT_DIR / "reports" / "single-obj-v2-eval.html", "Single Object V2 Eval", "train"),
     )
+    defaults += ((PROJECT_DIR / "data" / "eval_single_obj_v2_colour.jsonl",
+                  PROJECT_DIR / "reports" / "single-obj-v2-colour-eval.html",
+                  "Single Object V2 Colour Eval", "train"),)
     for dataset, report, title, default_split in defaults:
+        if not dataset.is_file() or not any(run["gen_data"] == _dataset_id(dataset) for run in runs):
+            print(f"Skipping {dataset.name}: no local dataset/videos yet.")
+            continue
         print(build_report(dataset, runs, report, args.max_samples, args.overwrite,
                            title, split=args.split or ("all" if full_run else default_split)))
 

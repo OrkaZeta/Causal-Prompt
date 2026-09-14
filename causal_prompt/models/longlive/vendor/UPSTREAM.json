@@ -1,0 +1,10 @@
+{
+  "repository": "LongLive",
+  "commit": "6b36d20ec6f7958d29d11a704dfa64611a9f2572",
+  "source": "third_party/LongLive",
+  "note": "Vendored runtime; upstream reference is read-only.",
+  "local_changes": [
+    "pipeline/__init__.py",
+    "utils/wan_5b_wrapper.py"
+  ]
+}
