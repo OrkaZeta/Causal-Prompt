@@ -318,20 +318,8 @@ def build_report(dataset: Path, runs: list[dict], report: Path,
                     video = run["videos"][sample_id]
                     strip = run["strips"] / f"{sample_id}{run['suffix']}.jpg"
                     make_strip(video, strip, overwrite)
-                    strip21 = run["strips21"] / f"{sample_id}{run['suffix']}.jpg"
-                    make_strip(video, strip21, overwrite, frame_count=21)
                     strip_relative = Path("..") / strip.relative_to(PROJECT_DIR)
                     video_relative = Path("..") / video.relative_to(PROJECT_DIR)
-                    details = ""
-                    metadata_path = video.with_suffix(".json")
-                    if run["model"].startswith("WM-") and metadata_path.is_file():
-                        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-                        rows = "".join(f"{i}: {text}\n" for i, text in enumerate(metadata.get("chunk_prompts", [])))
-                        info = (f"{metadata.get('input_mode')} | native {metadata.get('native_fps')} fps | "
-                                f"chunk {metadata.get('chunk_seconds')} s | "
-                                f"starts {metadata.get('chunk_start_seconds')}")
-                        details = f'<details><summary>{html.escape(info)}</summary><pre>{html.escape(rows)}</pre></details>'
-                    strip21_relative = Path("..") / strip21.relative_to(PROJECT_DIR)
                     experiment_sheet = _experiment_sheet(run) if show_experiment else ""
                     show_experiment = False
                     generation_rows.append(
@@ -340,7 +328,6 @@ def build_report(dataset: Path, runs: list[dict], report: Path,
                         f'<button class="strip" data-video="{video_relative}">'
                         f'<img src="{strip_relative}" alt="{html.escape(sample_id)} '
                         f'seed {run["gen_seed"]} strip"></button></div>'
-                        f'<a href="{strip21_relative}" target="_blank">21 frames · 0–5 s</a>{details}'
                     )
                 run = variants[0]
                 generation_groups.append(
