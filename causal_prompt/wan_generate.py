@@ -317,6 +317,17 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Convert Wan 2.2 model parameters to its configured dtype.",
     )
+    parser.add_argument(
+        "--torch-compile",
+        action="store_true",
+        help="Compile the Wan diffusion-model forward pass with torch.compile.",
+    )
+    parser.add_argument(
+        "--torch-compile-mode",
+        choices=("default", "reduce-overhead", "max-autotune"),
+        default="default",
+        help="torch.compile mode (default: default).",
+    )
     parser.add_argument("--split", choices=("train", "test", "all"), default="test")
     parser.add_argument("--max_samples", type=int)
     parser.add_argument("--sample-id-glob", action="append", default=[])
@@ -335,6 +346,22 @@ def _init_logging(rank: int) -> None:
         )
     else:
         logging.basicConfig(level=logging.ERROR)
+
+
+def _compile_pipeline_models(pipeline, mode: str) -> tuple[str, ...]:
+    """Compile only DiT forwards while preserving model movement/offloading."""
+    import torch
+
+    compiled = []
+    for name in ("model", "high_noise_model", "low_noise_model"):
+        model = getattr(pipeline, name, None)
+        if model is None:
+            continue
+        model.forward = torch.compile(model.forward, mode=mode, dynamic=False)
+        compiled.append(name)
+    if not compiled:
+        raise AttributeError("Wan pipeline exposes no diffusion model to compile.")
+    return tuple(compiled)
 
 
 def _output_path(
@@ -500,6 +527,15 @@ def generate(args: argparse.Namespace) -> list[Path]:
             use_sp=(args.ulysses_size > 1),
             t5_cpu=args.t5_cpu,
             convert_model_dtype=args.convert_model_dtype,
+        )
+
+    if getattr(args, "torch_compile", False):
+        compile_mode = getattr(args, "torch_compile_mode", "default")
+        compiled = _compile_pipeline_models(pipeline, compile_mode)
+        logging.info(
+            "torch.compile enabled for %s (mode=%s, dynamic=False).",
+            ", ".join(compiled),
+            compile_mode,
         )
 
     if args.prompt_dataset is not None:
