@@ -57,7 +57,7 @@ def load_items(path: Path) -> list[ReactBenchItem]:
 def _require_runtime(base_model: Path, lightning_lora: Path) -> None:
     required = (
         LIGHTNING_SOURCE / "wan" / "__init__.py",
-        base_model / "config.json",
+        base_model / "configuration.json",
         base_model / "models_t5_umt5-xxl-enc-bf16.pth",
         base_model / "Wan2.1_VAE.pth",
         base_model / "high_noise_model",
