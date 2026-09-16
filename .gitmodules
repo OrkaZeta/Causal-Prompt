@@ -19,3 +19,6 @@
 [submodule "third_party/Incantation"]
 	path = third_party/Incantation
 	url = https://github.com/zhushangwen/Incantation
+[submodule "third_party/LightX2V-Wan2.2-Lightning"]
+	path = third_party/LightX2V-Wan2.2-Lightning
+	url = https://github.com/ModelTC/LightX2V-Wan2.2-Lightning.git
