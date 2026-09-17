@@ -95,6 +95,14 @@ def _is_complete_output(path: Path) -> bool:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument(
+        "--prompt",
+        help="Generate one literal prompt instead of reading the JSONL input.",
+    )
+    parser.add_argument(
+        "--output-id",
+        help="Filename ID for --prompt; output is <output-dir>/<output-id>.mp4.",
+    )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--base-model", type=Path, default=DEFAULT_BASE_MODEL)
     parser.add_argument("--lightning-lora", type=Path, default=DEFAULT_LIGHTNING_LORA)
@@ -112,9 +120,20 @@ def main() -> None:
     if args.max_samples is not None and args.max_samples <= 0:
         raise ValueError("--max-samples must be positive")
 
-    items = load_items(args.input)
-    if args.max_samples is not None:
-        items = items[: args.max_samples]
+    if args.prompt is not None:
+        if not args.prompt.strip():
+            raise ValueError("--prompt must not be empty")
+        if not isinstance(args.output_id, str) or SAFE_ID.fullmatch(args.output_id) is None:
+            raise ValueError("--prompt requires a filename-safe --output-id")
+        if args.max_samples is not None:
+            raise ValueError("--max-samples cannot be combined with --prompt")
+        items = [ReactBenchItem(args.output_id, args.prompt.strip())]
+    else:
+        if args.output_id is not None:
+            raise ValueError("--output-id requires --prompt")
+        items = load_items(args.input)
+        if args.max_samples is not None:
+            items = items[: args.max_samples]
     pending = [
         item
         for item in items
