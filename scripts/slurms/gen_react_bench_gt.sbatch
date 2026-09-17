@@ -24,7 +24,7 @@ source scripts/slurms/env.sh
 
 INPUT="${INPUT:-data/react_bench_test.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/react_bench/test/gt_video}"
-BASE_MODEL="${BASE_MODEL:-/projects/hi-paris/ZiyiData/Models/Wan2.2-T2V-A14B-Diffusers}"
+BASE_MODEL="${BASE_MODEL:-/projects/hi-paris/ZiyiData/Models/Wan2.2-T2V-A14B}"
 LIGHTNING_LORA="${LIGHTNING_LORA:-/projects/hi-paris/ZiyiData/Models/Wan2.2-Lightning/Wan2.2-T2V-A14B-4steps-lora-rank64-Seko-V2.0}"
 SEED="${SEED:-42}"
 TS_ATTN_RATIO="${TS_ATTN_RATIO:-0.25}"
