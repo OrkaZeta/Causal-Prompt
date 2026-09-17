@@ -131,6 +131,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lightning-lora", type=Path, default=DEFAULT_LIGHTNING_LORA)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-samples", type=int)
+    parser.add_argument("--sample-id", help="Generate one ID from the JSONL input.")
     parser.add_argument(
         "--ts-attn-ratio",
         type=float,
@@ -165,11 +166,17 @@ def main() -> None:
             raise ValueError("--prompt accepts at most three --event values")
         if args.max_samples is not None:
             raise ValueError("--max-samples cannot be combined with --prompt")
+        if args.sample_id is not None:
+            raise ValueError("--sample-id cannot be combined with --prompt")
         items = [ReactBenchItem(args.output_id, prompt, events)]
     else:
         if args.output_id is not None or args.event:
             raise ValueError("--output-id and --event require --prompt")
         items = load_items(args.input)
+        if args.sample_id is not None:
+            items = [item for item in items if item.sample_id == args.sample_id]
+            if not items:
+                raise ValueError(f"Unknown --sample-id: {args.sample_id}")
         if args.max_samples is not None:
             items = items[: args.max_samples]
 
