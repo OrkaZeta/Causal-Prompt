@@ -22,3 +22,6 @@
 [submodule "third_party/LightX2V-Wan2.2-Lightning"]
 	path = third_party/LightX2V-Wan2.2-Lightning
 	url = https://github.com/ModelTC/LightX2V-Wan2.2-Lightning.git
+[submodule "third_party/TS-Attn"]
+	path = third_party/TS-Attn
+	url = https://github.com/Hong-yu-Zhang/TS-Attn
